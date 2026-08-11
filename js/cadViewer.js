@@ -15,9 +15,9 @@ import { PLYLoader } from "three/addons/loaders/PLYLoader.js";
 
 // How strongly each gesture delta moves the camera. Raise these to make a
 // gesture feel more sensitive, lower them to make it feel calmer.
-const PAN_UNIT = 0.01;
+const PAN_UNIT = 0.03;
 const ROTATE_UNIT = 0.005;
-const ZOOM_UNIT = 0.02;
+const ZOOM_UNIT = 0.05;
 const MIN_RADIUS = 0.5;
 const MAX_RADIUS = 50;
 
