@@ -17,6 +17,7 @@ const statusEl = document.getElementById("status");
 const modeEl = document.getElementById("mode");
 const fpsEl = document.getElementById("fps");
 const handsEl = document.getElementById("handsDetected");
+const pinchDistEl = document.getElementById("pinchDist");
 
 const startBtn = document.getElementById("startBtn");
 const resetViewBtn = document.getElementById("resetViewBtn");
@@ -84,7 +85,7 @@ downloadLogBtn.addEventListener("click", () => {
     statusEl.textContent = "No session data yet — start the camera first.";
     return;
   }
-  const header = "timestamp_ms,fps,hands_detected,state,pan_dx,pan_dy,rotate_dx,rotate_dy,zoom\n";
+  const header = "timestamp_ms,fps,hands_detected,state,pan_dx,pan_dy,rotate_dx,rotate_dy,zoom,pinch_dist\n";
   const rows = sessionLog.map((row) => row.join(",")).join("\n");
   const blob = new Blob([header + rows], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
@@ -163,6 +164,10 @@ function loop() {
   modeEl.textContent = gesture.state;
   fpsEl.textContent = fps.toFixed(1);
   handsEl.textContent = String(handsData.length);
+  pinchDistEl.textContent =
+    gesture.pinchDistance !== null
+      ? `${gesture.pinchDistance.toFixed(2)} / ${controller.pinchThreshold.toFixed(2)}`
+      : "–";
 
   sessionLog.push([
     now.toFixed(0),
@@ -174,6 +179,7 @@ function loop() {
     gesture.rotate?.dx.toFixed(4) ?? "",
     gesture.rotate?.dy.toFixed(4) ?? "",
     gesture.zoom?.toFixed(4) ?? "",
+    gesture.pinchDistance?.toFixed(4) ?? "",
   ]);
 
   requestAnimationFrame(loop);

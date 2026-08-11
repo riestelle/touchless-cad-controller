@@ -108,9 +108,16 @@ export class GestureController {
   }
 
   // handsData: array of { landmarks: [{x,y,z} x21], label: "Left"|"Right" }
-  // Returns { state, pan: {dx,dy}|null, rotate: {dx,dy}|null, zoom: number|null }
+  // Returns { state, pan: {dx,dy}|null, rotate: {dx,dy}|null, zoom: number|null,
+  //           pinchDistance: number|null }
   update(handsData) {
-    const result = { state: GestureState.IDLE, pan: null, rotate: null, zoom: null };
+    const result = {
+      state: GestureState.IDLE,
+      pan: null,
+      rotate: null,
+      zoom: null,
+      pinchDistance: null, // normalized thumb-index distance; for a debug/calibration readout
+    };
 
     if (handsData.length === 2) {
       const c0 = handsData[0].landmarks[9];
@@ -132,7 +139,16 @@ export class GestureController {
 
     if (handsData.length === 1) {
       const { landmarks: lm, label } = handsData[0];
-      const { pinching } = isPinch(lm, this.pinchThreshold);
+      const { pinching, distance } = isPinch(lm, this.pinchThreshold);
+      result.pinchDistance = distance;
+
+      // A pinch attempt that doesn't fully close (common with webcam noise
+      // and single-camera depth ambiguity) still leaves the other 4 fingers
+      // reading as "extended", so without this buffer it silently falls
+      // through to isOpenPalm() and gets misread as ROTATE instead of just
+      // not registering. Require the fingers to be clearly spread out
+      // (well past the pinch threshold) before allowing that fallback.
+      const clearlyNotPinching = distance > this.pinchThreshold * 1.5;
 
       if (pinching) {
         this._prevPalmPos = null;
@@ -149,7 +165,7 @@ export class GestureController {
         }
         this._prevPinchPos = { x: sx, y: sy };
         result.state = GestureState.PAN;
-      } else if (isOpenPalm(lm, label)) {
+      } else if (clearlyNotPinching && isOpenPalm(lm, label)) {
         this._prevPinchPos = null;
         this.posXFilter.reset();
         this.posYFilter.reset();
