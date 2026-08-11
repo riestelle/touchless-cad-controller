@@ -1,20 +1,66 @@
-# Software-Engineering-2
-
-
 # Touchless 3D CAD Model Navigation via Webcam Gesture Tracking
 
 Control a 3D model with hand gestures picked up by a normal laptop/USB webcam —
-no mouse, no keyboard, no extra sensors. Built with **MediaPipe** (hand tracking)
-and **Open3D** (3D viewer).
+no mouse, no keyboard, no extra sensors, and **no Python install.**
+
+This runs entirely in your web browser using **MediaPipe's Tasks Vision**
+(hand tracking, compiled to WebAssembly) and **Three.js** (the 3D viewer).
+Open one HTML file through a local server and it works.
+
+## Why this version is different from a Python/OpenCV version
+
+The original plan for this project used Python, OpenCV, MediaPipe's Python
+package, and Open3D. That stack has one recurring problem for a shared lab
+setting: MediaPipe's Python wheels only support specific Python versions,
+so whoever runs the project first has to install a matching Python version
+side-by-side with whatever they already have, then fight `pip` until the
+versions line up. That's a bad experience for a demo you want to just work
+on a lab machine.
+
+Moving the same algorithm to the browser removes that problem:
+
+| | Python + OpenCV + Open3D | Browser (this version) |
+|---|---|---|
+| Install | Match a specific Python version, then `pip install` four packages | A browser (already installed) + optionally Node.js for one local server script |
+| First run | Can fail on Python-version mismatches | Works on any recent Chrome, Edge, or Firefox |
+| Startup time | ~2–4s to import OpenCV/MediaPipe/Open3D | Page load + one-time ~10 MB model download |
+| Cross-platform | Windows/macOS/Linux, but native-dependency issues are common | Anywhere a modern browser runs, including Chromebooks |
+| Runs the same detection model? | Yes (MediaPipe HandLandmarker) | Yes — same model file, same 21-point landmarks, run in-browser via WebAssembly instead of natively |
+
+The gesture-recognition math (pinch detection, open-palm detection,
+two-hand distance, EMA smoothing) is the same algorithm from the Python
+version, translated line-for-line into JavaScript. Nothing about *how* the
+gestures are recognized changed — only *where* the code runs.
+
+**Trade-off to know about:** the Python version, once installed, worked
+fully offline. This version fetches the hand-tracking model and two small
+libraries (MediaPipe's WASM runtime, Three.js) from a CDN. Your browser
+caches them after the first successful run, so subsequent runs on the same
+machine are typically fast and mostly-offline — but if you need a
+guaranteed zero-internet demo, test it once on the target machine/network
+beforehand.
 
 ## What's in this folder
 
-| File | Purpose |
-|---|---|
-| `hand_tracker.py` | Wraps MediaPipe's HandLandmarker; turns a webcam frame into 21 hand landmarks + Left/Right label |
-| `gesture_controller.py` | Classifies pinch / open-palm / two-hand gestures and smooths them (EMA filter) into pan/rotate/zoom deltas |
-| `main.py` | Captures webcam, runs the two modules above, drives the Open3D viewer |
-| `requirements.txt` | Python dependencies |
+```
+touchless_cad_controller/
+├── index.html                      Page layout: camera panel, 3D viewport, settings
+├── style.css                       Visual styling
+├── server.js                       Zero-dependency local file server
+├── package.json                    Project metadata + npm scripts (no dependencies to install)
+├── js/
+│   ├── handTracker.js              Wraps MediaPipe HandLandmarker (webcam -> 21 landmarks + Left/Right)
+│   ├── gestureController.js        Classifies pinch / open-palm / two-hand gestures, smooths them (EMA)
+│   ├── cadViewer.js                Three.js scene, camera, and pan/rotate/zoom + model loading (.stl/.obj/.ply)
+│   └── main.js                     Wires the above together and runs the frame loop
+└── tests/
+    └── gestureController.test.js   Unit tests for the gesture-classification logic
+```
+
+That's more than the original 3 files on purpose: `gestureController.js` (the
+algorithm) is now separated cleanly from `handTracker.js` (camera input) and
+`cadViewer.js` (3D rendering), each has one job, and there's a real test file
+covering the algorithm's logic instead of only manual testing.
 
 ## Gestures
 
@@ -29,133 +75,158 @@ and **Open3D** (3D viewer).
 
 ## Step-by-step setup
 
-### 1. Install Python
-You need **Python 3.9–3.12** (MediaPipe doesn't yet ship wheels for 3.13+).
-Check your version:
+### 1. Get the project files
+
+Put this whole `touchless_cad_controller/` folder somewhere on your computer.
+
+### 2. Serve the folder locally
+
+Browsers block camera access and the `import` statements this project uses
+when you just double-click `index.html` (a `file://` page). You need to
+serve the folder over `http://` instead. Pick whichever option below you
+already have available — you only need one.
+
+**Option A — Node.js (recommended, zero extra installs)**
+If you have [Node.js](https://nodejs.org) (any version 18 or newer — unlike
+MediaPipe's Python wheels, this is not picky about the exact version):
 ```bash
-python3 --version
+node server.js
 ```
-If you need to install/upgrade Python, get it from [python.org/downloads](https://www.python.org/downloads/).
-
-### 2. Get the project files
-Put `hand_tracker.py`, `gesture_controller.py`, `main.py`, and `requirements.txt`
-in one folder, e.g. `touchless_cad_controller/`, and open a terminal there.
-
-### 3. Create a virtual environment (recommended)
-This keeps the project's packages separate from the rest of your system.
-
-**Windows:**
+or, equivalently:
 ```bash
-python -m venv venv
-venv\Scripts\activate
+npm start
 ```
+Then open **http://localhost:8000** in your browser.
 
-**macOS / Linux:**
+**Option B — VS Code "Live Server" extension**
+If you use VS Code, install the free **Live Server** extension, right-click
+`index.html`, and choose **"Open with Live Server."** No terminal needed.
+
+**Option C — Any other static server you already have**
+Anything that serves static files works: `npx serve`, `php -S
+localhost:8000`, an IDE's built-in server, etc. Just point it at this
+folder and open the URL it gives you.
+
+### 3. Open it and allow camera access
+
+Go to the local URL from step 2, click **Start camera**, and allow camera
+access when the browser prompts you. The **first run downloads the
+hand-tracking model** (~10 MB, one-time, requires internet). After that,
+your browser caches it.
+
+You'll see:
+- **Camera feed** (left) — your webcam with the hand skeleton drawn on it,
+  plus live Mode / FPS / Hands-detected readouts.
+- **3D viewport** (middle) — the model you're controlling. By default this
+  is a simple bracket-shaped placeholder part so the demo works with zero
+  setup.
+- **Settings** (right) — sliders to tune sensitivity, plus the gesture
+  reference.
+
+### 4. (Optional) Use your own CAD model
+
+Export an `.stl`, `.obj`, or `.ply` file from your CAD tool (e.g.
+SolidWorks → "Save As" → STL), then click **Load model** in the 3D
+viewport toolbar and pick the file. No command-line flag needed — it's a
+file picker in the UI.
+
+### 5. (Optional) Log data for your evaluation objective
+
+Click **Download log** at any point after starting the camera. It saves a
+CSV (timestamp, FPS, hands detected, gesture state, and the raw
+pan/rotate/zoom values for every frame so far) that you can graph in
+Excel/Python afterward — the same fields the original `--log` flag wrote.
+
+### 6. (Optional) Tune sensitivity without editing code
+
+The original Python version required editing constructor arguments in
+`main.py` to change how sensitive gestures felt. This version exposes the
+same four numbers — pinch threshold, pan speed, rotate speed, zoom speed —
+as sliders in the Settings panel, live, while the camera is running.
+
+### 7. (Optional) Run the algorithm's tests
+
 ```bash
-python3 -m venv venv
-source venv/bin/activate
+npm test
 ```
-You'll know it worked because your terminal prompt now starts with `(venv)`.
-
-### 4. Install the dependencies
-```bash
-pip install -r requirements.txt
-```
-This installs:
-- `opencv-python` — webcam capture + on-screen debug overlay
-- `mediapipe` — the hand-tracking model
-- `open3d` — the 3D viewer and camera controls
-- `numpy` — math helpers
-
-### 5. Run it
-```bash
-python main.py
-```
-The **first run downloads a small hand-tracking model file** (~10 MB, one-time,
-requires internet). After that it works fully offline.
-
-Two windows will open:
-1. **"Webcam - Hand Tracking"** — your camera feed with the hand skeleton drawn on it, plus the current mode (PAN/ROTATE/ZOOM/IDLE) and FPS.
-2. **"Touchless CAD Viewer"** — the 3D model you're controlling. By default this is a simple bracket-shaped placeholder part so the demo works with zero setup.
-
-Press **`q`** in the webcam window to quit.
-
-### 6. (Optional) Use your own CAD model
-If you have an `.obj`, `.stl`, or `.ply` file (export these from most CAD tools,
-e.g. SolidWorks → "Save As" → STL):
-```bash
-python main.py --model path/to/your_part.stl
-```
-
-### 7. (Optional) Log data for your evaluation objective
-Your third objective is measuring speed/smoothness/efficiency — this flag
-writes a CSV with a row per frame (timestamp, FPS, gesture state, and the
-raw pan/rotate/zoom values) that you can graph in Excel/Python afterward:
-```bash
-python main.py --log session1.csv
-```
-
-### 8. (Optional) Different webcam or no mirroring
-```bash
-python main.py --camera 1        # use the second camera device
-python main.py --no-mirror       # disable the left/right flip
-```
+This runs `tests/gestureController.test.js` against the pinch/palm/two-hand
+classification logic using synthetic hand poses — useful for objective 2
+(the gesture → CAD command algorithm) if you need to show automated
+verification in your write-up.
 
 ---
 
 ## Troubleshooting
 
-**"could not open webcam"**
-Another app (Zoom, Teams, browser tab) may be holding the camera — close it
-and retry. Also check your OS camera privacy settings allow Python/Terminal
-to use the camera.
+**"Could not start: Permission denied" / no camera prompt appears**
+Another app (Zoom, Teams, a browser tab) may be holding the camera — close
+it and retry. Also check your OS camera privacy settings allow your
+browser to use the camera. Camera access also requires either
+`http://localhost` (fine) or `https://` — it will not work if you open the
+page directly as a `file://` path.
 
-**Model download fails on first run**
-You need an internet connection the first time only. If your network blocks
-`storage.googleapis.com`, download the model manually from
-`https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task`
-and save it as `hand_landmarker.task` in the same folder as `main.py`.
+**Model download fails / page hangs on "Loading hand-tracking model..."**
+You need an internet connection the first time only. If your network
+blocks `storage.googleapis.com` or `cdn.jsdelivr.net`, this setup won't be
+able to fetch the model or libraries — check with your network admin, or
+test on a different network once and then reuse the same browser profile
+(browsers cache these files after a successful load).
 
 **Gestures feel jumpy or misclassified**
 - Make sure your hand is well-lit and the whole hand is inside the camera frame.
-- The pinch threshold assumes a fairly deliberate pinch; if it triggers too
-  easily (or not easily enough), adjust `pinch_threshold` in
-  `GestureController(...)` inside `main.py` (try values between 0.3–0.5).
-- To make rotation/pan feel more or less sensitive, adjust `rotate_gain` /
-  `pan_gain` / `zoom_gain` the same way.
+- Open the **Settings** panel and adjust **Pinch threshold** if pinch
+  triggers too easily or not easily enough.
+- Adjust **Pan/Rotate/Zoom speed** the same way if movement feels too fast
+  or too slow.
 
-**Open3D window doesn't appear / crashes on launch**
-Open3D needs a real display (it won't work over a plain SSH session without
-X forwarding, or on a headless server). Run it on your local machine directly.
+**3D viewport is black / nothing renders**
+Your browser needs WebGL support (all modern browsers have this by
+default). Check `chrome://gpu` (or your browser's equivalent) if you
+suspect hardware acceleration is disabled.
 
-**Low FPS**
-- Close other apps using the camera/GPU.
-- Lower `detection_confidence`/`tracking_confidence` slightly in
-  `HandTracker(...)` for faster (if slightly less accurate) tracking.
-- Reduce webcam resolution: add `cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)` and
-  `cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)` right after `cv2.VideoCapture(...)`
-  in `main.py`.
+**Hand tracking feels slow / low FPS**
+- Close other apps using the camera or GPU.
+- Try a different browser — Chrome and Edge tend to have the fastest WASM
+  and WebGL performance.
+- The app already tries the GPU delegate first and falls back to CPU
+  automatically; a CPU fallback will be noticeably slower on older machines.
+
+**"Unsupported file type" when loading a model**
+Only `.stl`, `.obj`, and `.ply` are supported, matching the original
+Python version's `--model` flag.
 
 ---
 
 ## How it maps to your project's objectives
 
-- **Objective 1 (touchless webcam input):** `hand_tracker.py` does this — no
-  extra sensors, just `cv2.VideoCapture` + MediaPipe.
-- **Objective 2 (gesture → CAD command algorithm):** `gesture_controller.py`
+- **Objective 1 (touchless webcam input):** `handTracker.js` does this — no
+  extra sensors, just `getUserMedia()` + MediaPipe's HandLandmarker running
+  in-browser via WebAssembly.
+- **Objective 2 (gesture → CAD command algorithm):** `gestureController.js`
   is that algorithm — it converts pinch distance, palm-open detection, and
-  two-hand distance into pan/rotate/zoom commands, and `main.py` feeds those
-  into Open3D's camera controls (`view_control.translate/rotate/scale`),
-  which is the standard way to navigate a 3D scene like a CAD viewport.
-- **Objective 3 (measuring speed/smoothness/efficiency):** the on-screen FPS
-  counter plus the `--log` CSV option give you raw data (FPS over time,
-  gesture-state transitions, per-frame movement deltas) to analyze for your
-  write-up — e.g. plotting FPS stability, or timing how long it takes users
-  to complete a rotate-then-zoom task versus a mouse.
+  two-hand distance into pan/rotate/zoom commands (unit-tested in
+  `tests/gestureController.test.js`), and `cadViewer.js` feeds those into a
+  Three.js orbit camera, which is the browser equivalent of Open3D's
+  `view_control.translate/rotate/scale`.
+- **Objective 3 (measuring speed/smoothness/efficiency):** the on-screen
+  FPS readout plus the **Download log** button give you the same
+  per-frame data (FPS over time, gesture-state transitions, movement
+  deltas) to analyze for your write-up — e.g. plotting FPS stability, or
+  timing a rotate-then-zoom task with gestures vs. a mouse.
+
+## Browser requirements
+
+A recent version of Chrome, Edge, or Firefox with a webcam and WebGL
+support. Safari works for basic use but MediaPipe's GPU delegate support on
+Safari is less consistent — the app automatically falls back to the CPU
+delegate if GPU initialization fails, just slower.
 
 ## Ideas if you want to extend this further
-- Add a "fist" gesture to reset the camera to its default view.
-- Add a third hand-pose (e.g., thumbs-up) to toggle wireframe vs. solid rendering.
-- Run a small user study: have classmates complete the same navigation task
-  with a mouse vs. with gestures, and compare completion time and error rate
-  for your results section.
+
+- Add a "fist" gesture to reset the camera view (there's already a **Reset
+  view** button — this would make it gesture-driven instead).
+- Add a third hand pose (e.g., thumbs-up) to toggle wireframe vs. solid
+  rendering in `cadViewer.js`.
+- Run a small user study: have classmates complete the same navigation
+  task with a mouse vs. with gestures, using **Download log** to compare
+  completion time and error rate for your results section.

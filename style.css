@@ -1,0 +1,292 @@
+/* style.css
+   Visual language: a dark lab-equipment console. Monospace for anything
+   that reads like a live measurement (mode, FPS, hand count, sliders),
+   plain sans-serif for labels and copy. Green/orange accents match the
+   hand-skeleton overlay colors drawn on the camera feed itself, so the UI
+   and the video feed feel like one instrument rather than two. */
+
+:root {
+  --bg: #11141c;
+  --panel: #1a1e29;
+  --panel-border: #2a3040;
+  --text: #e7ebf3;
+  --text-dim: #8891a5;
+  --accent-green: #33ff99;
+  --accent-orange: #ff8a3d;
+  --accent-blue: #5aa4ff;
+  --danger: #ff5a6e;
+  --mono: "SFMono-Regular", "JetBrains Mono", Consolas, Menlo, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --radius: 10px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  min-height: 100vh;
+}
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1.1rem 1.5rem;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.brand-mark {
+  font-size: 1.8rem;
+}
+
+.brand h1 {
+  margin: 0;
+  font-size: 1.15rem;
+  letter-spacing: 0.01em;
+}
+
+.brand p {
+  margin: 0.15rem 0 0;
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+
+.status-pill {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel);
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 1.1fr 1.4fr 0.8fr;
+  gap: 1rem;
+  padding: 1.5rem;
+  align-items: start;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius);
+  padding: 1rem;
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.panel-header h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.canvas-frame {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  background: #05060a;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.canvas-frame canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.start-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(5, 6, 10, 0.65);
+  color: var(--text);
+  border: none;
+  font-family: var(--sans);
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.start-overlay:hover {
+  background: rgba(5, 6, 10, 0.8);
+}
+
+.start-overlay:disabled {
+  display: none;
+}
+
+.readout {
+  display: flex;
+  gap: 1.5rem;
+  margin: 0.9rem 0 0;
+}
+
+.readout > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.readout dt {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.readout dd {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 1.1rem;
+  color: var(--accent-green);
+}
+
+.toolbar {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+button,
+.file-button {
+  font-family: var(--sans);
+  font-size: 0.82rem;
+  color: var(--text);
+  background: #232838;
+  border: 1px solid var(--panel-border);
+  border-radius: 6px;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+button:hover,
+.file-button:hover {
+  border-color: var(--accent-blue);
+}
+
+button:focus-visible,
+.file-button:focus-within,
+input:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+}
+
+.settings-panel h2 {
+  margin: 0 0 0.9rem;
+  font-size: 0.95rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.settings-panel h2:not(:first-child) {
+  margin-top: 1.4rem;
+}
+
+.slider-row {
+  display: block;
+  margin-bottom: 0.9rem;
+}
+
+.slider-row span {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+  margin-bottom: 0.3rem;
+}
+
+.slider-row output {
+  font-family: var(--mono);
+  color: var(--text);
+}
+
+.slider-row input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent-blue);
+}
+
+.gesture-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  font-size: 0.82rem;
+  color: var(--text-dim);
+}
+
+.gesture-legend strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.dot {
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  margin-right: 0.4rem;
+}
+
+.dot-pan {
+  background: var(--accent-blue);
+}
+
+.dot-rotate {
+  background: var(--accent-orange);
+}
+
+.dot-zoom {
+  background: var(--accent-green);
+}
+
+@media (max-width: 900px) {
+  .layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}

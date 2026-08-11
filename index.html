@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Touchless CAD Controller</title>
+  <link rel="stylesheet" href="style.css" />
+
+  <!-- Tells the browser where to find "three" and its addons when our
+       JS files import them by name. No build step, no bundler. -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <header class="app-header">
+    <div class="brand">
+      <span class="brand-mark">✋</span>
+      <div>
+        <h1>Touchless CAD Controller</h1>
+        <p>Webcam hand tracking for hands-free 3D model navigation</p>
+      </div>
+    </div>
+    <div class="status-pill" id="status">Not started</div>
+  </header>
+
+  <main class="layout">
+    <section class="panel camera-panel">
+      <div class="panel-header">
+        <h2>Camera feed</h2>
+        <label class="checkbox">
+          <input type="checkbox" id="mirrorCheckbox" checked />
+          Mirror
+        </label>
+      </div>
+
+      <div class="canvas-frame">
+        <video id="webcam" autoplay playsinline muted hidden></video>
+        <canvas id="captureCanvas"></canvas>
+        <button class="start-overlay" id="startBtn">Start camera</button>
+      </div>
+
+      <dl class="readout">
+        <div><dt>Mode</dt><dd id="mode">IDLE</dd></div>
+        <div><dt>FPS</dt><dd id="fps">0.0</dd></div>
+        <div><dt>Hands</dt><dd id="handsDetected">0</dd></div>
+      </dl>
+    </section>
+
+    <section class="panel viewer-panel">
+      <div class="panel-header">
+        <h2>3D viewport</h2>
+        <div class="toolbar">
+          <label class="file-button">
+            Load model
+            <input type="file" id="modelInput" accept=".stl,.obj,.ply" hidden />
+          </label>
+          <button id="resetViewBtn">Reset view</button>
+          <button id="downloadLogBtn">Download log</button>
+        </div>
+      </div>
+      <div class="canvas-frame">
+        <canvas id="viewerCanvas"></canvas>
+      </div>
+    </section>
+
+    <aside class="panel settings-panel">
+      <h2>Sensitivity</h2>
+
+      <label class="slider-row">
+        <span>Pinch threshold <output id="pinchValue"></output></span>
+        <input type="range" id="pinchSlider" min="0.15" max="0.7" step="0.01" value="0.4" />
+      </label>
+
+      <label class="slider-row">
+        <span>Pan speed <output id="panValue"></output></span>
+        <input type="range" id="panSlider" min="0.5" max="6" step="0.1" value="2.5" />
+      </label>
+
+      <label class="slider-row">
+        <span>Rotate speed <output id="rotateValue"></output></span>
+        <input type="range" id="rotateSlider" min="50" max="500" step="10" value="250" />
+      </label>
+
+      <label class="slider-row">
+        <span>Zoom speed <output id="zoomValue"></output></span>
+        <input type="range" id="zoomSlider" min="1" max="20" step="0.5" value="8" />
+      </label>
+
+      <h2>Gestures</h2>
+      <ul class="gesture-legend">
+        <li><span class="dot dot-pan"></span><strong>Pinch + drag</strong> — one hand — Pan</li>
+        <li><span class="dot dot-rotate"></span><strong>Open palm, move</strong> — one hand — Rotate</li>
+        <li><span class="dot dot-zoom"></span><strong>Two hands</strong>, apart/together — Zoom</li>
+      </ul>
+    </aside>
+  </main>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

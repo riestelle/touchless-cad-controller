@@ -1,0 +1,14 @@
+{
+  "name": "touchless-cad-controller",
+  "version": "1.0.0",
+  "description": "Touchless 3D CAD model navigation via webcam gesture tracking, running entirely in the browser.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test tests/*.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
