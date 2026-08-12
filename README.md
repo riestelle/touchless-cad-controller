@@ -6,9 +6,6 @@ model responds in real time, entirely in the browser.
 
 **🔗 Live demo:** https://touchless-cad-controller.vercel.app/
 
-> For local setup, troubleshooting, and step-by-step usage instructions,
-> see [README.md](./README.md). This doc is the "what is this and what can
-> it do" overview.
 
 ---
 
