@@ -4,7 +4,7 @@ Control a 3D model with your hands — no mouse, no keyboard, no extra
 sensors. Point a webcam at your hand, pinch/rotate/zoom in the air, and the
 model responds in real time, entirely in the browser.
 
-**🔗 Live demo:** [add your Vercel URL here]
+**🔗 Live demo:** https://touchless-cad-controller.vercel.app/
 
 > For local setup, troubleshooting, and step-by-step usage instructions,
 > see [README.md](./README.md). This doc is the "what is this and what can
@@ -36,24 +36,6 @@ Edge, or Firefox — including lab machines you don't control.
 - 🤲 **Two hands**, apart/together — zoom in/out
 - Live pinch-distance readout so you can see exactly how close a pinch is
   to registering, instead of guessing
-
-**Action gestures** (fire once per pose, not every frame)
-- ✊ **Fist** — reset the camera to frame the model
-- 👍 **Thumbs up** — wireframe on
-- 👎 **Thumbs down** — wireframe off
-
-**Calibration & precision**
-- **Auto pinch calibration** — hold your hand open, then pinch, and it sets
-  a working threshold for your hand and camera automatically
-- **Measurement tool** — click two points on the model to get a raycast
-  distance between them, with visual markers
-
-**View controls**
-- Snap to **Front / Back / Left / Right / Top / Bottom / Iso**, via toolbar
-  buttons or keyboard shortcuts `1`–`7`
-- Full mouse control at all times (drag / right-drag / scroll) — built on
-  the exact same pan/rotate/zoom code the gestures use, so it's a true
-  apples-to-apples alternative input method, not a separate system
 
 **Evaluation tooling**
 - **Session logger** — per-frame FPS, gesture state, and movement deltas,
