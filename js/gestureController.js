@@ -5,10 +5,18 @@
 // (EMA) filter so small hand tremors don't cause jittery model movement.
 //
 // Gesture rules:
-//   Two hands visible               -> ZOOM   (change in distance between palms)
-//   One hand, thumb + index pinched -> PAN    (drag the pinch point)
-//   One hand, open palm             -> ROTATE (move the palm center)
-//   Anything else                   -> IDLE   (no movement)
+//   Two hands visible               -> ZOOM       (change in distance between palms)
+//   One hand, closed fist           -> FIST        (one-shot: reset view)
+//   One hand, thumb up, rest curled -> THUMBS_UP    (one-shot: wireframe on)
+//   One hand, thumb down, rest curl -> THUMBS_DOWN  (one-shot: wireframe off)
+//   One hand, thumb + index pinched -> PAN          (drag the pinch point)
+//   One hand, open palm             -> ROTATE       (move the palm center)
+//   Anything else                   -> IDLE         (no movement)
+//
+// FIST and THUMBS_UP/DOWN are "action" gestures, not continuous ones: they
+// fire `result.action` exactly once when the pose is first formed (a rising
+// edge), then latch until the hand leaves that pose, so holding a fist
+// doesn't spam reset-view every single frame.
 //
 // This file has no dependency on the DOM or on MediaPipe. It only works
 // with plain landmark data, so it can be unit tested on its own
@@ -19,6 +27,15 @@ export const GestureState = {
   PAN: "PAN (pinch)",
   ROTATE: "ROTATE (open palm)",
   ZOOM: "ZOOM (two hands)",
+  FIST: "FIST (reset view)",
+  THUMBS_UP: "THUMBS UP (wireframe on)",
+  THUMBS_DOWN: "THUMBS DOWN (wireframe off)",
+};
+
+export const GestureAction = {
+  RESET_VIEW: "RESET_VIEW",
+  WIREFRAME_ON: "WIREFRAME_ON",
+  WIREFRAME_OFF: "WIREFRAME_OFF",
 };
 
 // Simple exponential moving average filter for 1D smoothing.
@@ -78,6 +95,32 @@ export function isPinch(landmarks, threshold = 0.4) {
   return { pinching: distance < threshold, distance };
 }
 
+// A fist is "the four main fingers curled" — the thumb is intentionally
+// ignored here so isThumbPose() (checked first, see below) can claim the
+// thumb-extended case before it falls through to a generic fist.
+export function isFist(landmarks, label) {
+  const [index, middle, ring, pinky] = fingersExtended(landmarks, label);
+  return !index && !middle && !ring && !pinky;
+}
+
+// Thumbs up/down: the four main fingers curled AND the thumb clearly
+// extended AND pointing mostly up or down (not sideways). Returns
+// "up" | "down" | null. The vertical margin is normalized by hand scale so
+// it works the same regardless of distance from the camera.
+export function isThumbPose(landmarks, label) {
+  const extended = fingersExtended(landmarks, label);
+  const [index, middle, ring, pinky, thumbExtended] = extended;
+  if (index || middle || ring || pinky || !thumbExtended) return null;
+
+  const scale = handScale(landmarks);
+  const verticalOffset = (landmarks[0].y - landmarks[4].y) / scale; // + = thumb above wrist
+  const MARGIN = 0.6;
+
+  if (verticalOffset > MARGIN) return "up";
+  if (verticalOffset < -MARGIN) return "down";
+  return null;
+}
+
 export class GestureController {
   constructor({ pinchThreshold = 0.4, panGain = 2.5, rotateGain = 250.0, zoomGain = 8.0 } = {}) {
     this.pinchThreshold = pinchThreshold;
@@ -93,6 +136,11 @@ export class GestureController {
     this._prevPalmPos = null;
     this._prevTwoHandDist = null;
     this.state = GestureState.IDLE;
+
+    // Latches so FIST / THUMBS_UP / THUMBS_DOWN fire `action` once per pose
+    // instead of every single frame the pose is held.
+    this._fistLatched = false;
+    this._thumbLatched = null; // null | "up" | "down"
   }
 
   _resetSingleHand() {
@@ -117,6 +165,7 @@ export class GestureController {
       rotate: null,
       zoom: null,
       pinchDistance: null, // normalized thumb-index distance; for a debug/calibration readout
+      action: null, // one of GestureAction, fired once on the rising edge of a pose
     };
 
     if (handsData.length === 2) {
@@ -131,6 +180,8 @@ export class GestureController {
       result.state = GestureState.ZOOM;
 
       this._resetSingleHand();
+      this._fistLatched = false;
+      this._thumbLatched = null;
       this.state = result.state;
       return result;
     }
@@ -139,6 +190,35 @@ export class GestureController {
 
     if (handsData.length === 1) {
       const { landmarks: lm, label } = handsData[0];
+
+      const thumbPose = isThumbPose(lm, label);
+      if (thumbPose) {
+        this._resetSingleHand();
+        this._fistLatched = false;
+
+        if (this._thumbLatched !== thumbPose) {
+          result.action = thumbPose === "up" ? GestureAction.WIREFRAME_ON : GestureAction.WIREFRAME_OFF;
+          this._thumbLatched = thumbPose;
+        }
+        result.state = thumbPose === "up" ? GestureState.THUMBS_UP : GestureState.THUMBS_DOWN;
+        this.state = result.state;
+        return result;
+      }
+      this._thumbLatched = null;
+
+      if (isFist(lm, label)) {
+        this._resetSingleHand();
+
+        if (!this._fistLatched) {
+          result.action = GestureAction.RESET_VIEW;
+          this._fistLatched = true;
+        }
+        result.state = GestureState.FIST;
+        this.state = result.state;
+        return result;
+      }
+      this._fistLatched = false;
+
       const { pinching, distance } = isPinch(lm, this.pinchThreshold);
       result.pinchDistance = distance;
 
@@ -186,6 +266,8 @@ export class GestureController {
       }
     } else {
       this._resetSingleHand();
+      this._fistLatched = false;
+      this._thumbLatched = null;
     }
 
     this.state = result.state;
