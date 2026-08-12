@@ -279,51 +279,6 @@ input:focus-visible {
   background: var(--accent-green);
 }
 
-.dot-action {
-  background: var(--danger);
-}
-
-.view-toolbar {
-  margin-bottom: 0.75rem;
-}
-
-.view-toolbar .view-btn {
-  font-size: 0.75rem;
-  padding: 0.35rem 0.6rem;
-}
-
-button.active,
-.file-button.active {
-  border-color: var(--accent-green);
-  color: var(--accent-green);
-}
-
-.calibrate-btn {
-  width: 100%;
-  margin: -0.4rem 0 0.9rem;
-}
-
-.hint {
-  font-size: 0.78rem;
-  color: var(--text-dim);
-  margin: 0.4rem 0 0;
-  line-height: 1.4;
-}
-
-.benchmark-controls {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-  margin-top: 0.6rem;
-}
-
-.benchmark-status {
-  font-family: var(--mono);
-  font-size: 0.8rem;
-  color: var(--accent-blue);
-  margin: 0.6rem 0 0;
-}
-
 @media (max-width: 900px) {
   .layout {
     grid-template-columns: 1fr;

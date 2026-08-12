@@ -62,30 +62,12 @@
             <input type="file" id="modelInput" accept=".stl,.obj,.ply" hidden />
           </label>
           <button id="resetViewBtn">Reset view</button>
-          <button id="wireframeBtn">Wireframe</button>
-          <button id="measureBtn">Measure</button>
           <button id="downloadLogBtn">Download log</button>
         </div>
       </div>
-
-      <div class="toolbar view-toolbar" aria-label="Snap to view">
-        <button class="view-btn" data-view="front" title="Key: 1">Front</button>
-        <button class="view-btn" data-view="back" title="Key: 2">Back</button>
-        <button class="view-btn" data-view="left" title="Key: 3">Left</button>
-        <button class="view-btn" data-view="right" title="Key: 4">Right</button>
-        <button class="view-btn" data-view="top" title="Key: 5">Top</button>
-        <button class="view-btn" data-view="bottom" title="Key: 6">Bottom</button>
-        <button class="view-btn" data-view="iso" title="Key: 7">Iso</button>
-      </div>
-
       <div class="canvas-frame">
         <canvas id="viewerCanvas"></canvas>
       </div>
-
-      <dl class="readout">
-        <div><dt>Wireframe</dt><dd id="wireframeState">off</dd></div>
-        <div><dt>Measured</dt><dd id="measureResult">– units</dd></div>
-      </dl>
     </section>
 
     <aside class="panel settings-panel">
@@ -95,7 +77,6 @@
         <span>Pinch threshold <output id="pinchValue"></output></span>
         <input type="range" id="pinchSlider" min="0.15" max="0.7" step="0.01" value="0.4" />
       </label>
-      <button id="calibrateBtn" class="calibrate-btn">Calibrate pinch (3s)</button>
 
       <label class="slider-row">
         <span>Pan speed <output id="panValue"></output></span>
@@ -117,19 +98,7 @@
         <li><span class="dot dot-pan"></span><strong>Pinch + drag</strong> — one hand — Pan</li>
         <li><span class="dot dot-rotate"></span><strong>Open palm, move</strong> — one hand — Rotate</li>
         <li><span class="dot dot-zoom"></span><strong>Two hands</strong>, apart/together — Zoom</li>
-        <li><span class="dot dot-action"></span><strong>Fist</strong> — one hand — Reset view</li>
-        <li><span class="dot dot-action"></span><strong>Thumbs up / down</strong> — Wireframe on/off</li>
       </ul>
-      <p class="hint">Mouse also works any time: drag to rotate, right-drag to pan, scroll to zoom. Keys 1–7 snap to a view.</p>
-
-      <h2>Benchmark</h2>
-      <p class="hint">Times how long it takes to match a random target view — run once with gestures, once with the mouse, and compare.</p>
-      <div class="benchmark-controls">
-        <button id="benchGestureBtn">Start (gesture)</button>
-        <button id="benchMouseBtn">Start (mouse)</button>
-        <button id="benchDownloadBtn">Download results</button>
-      </div>
-      <p class="benchmark-status" id="benchmarkStatus">Not running.</p>
     </aside>
   </main>
 
