@@ -4,7 +4,7 @@ Control a 3D model with your hands — no mouse, no keyboard, no extra
 sensors. Point a webcam at your hand, pinch/rotate/zoom in the air, and the
 model responds in real time, entirely in the browser.
 
-**🔗 Live demo:** [add your Vercel URL here]
+**🔗 Live demo:** [[add your Vercel URL here]](https://touchless-cad-controller.vercel.app/)
 
 > For local setup, troubleshooting, and step-by-step usage instructions,
 > see [README.md](./README.md). This doc is the "what is this and what can
