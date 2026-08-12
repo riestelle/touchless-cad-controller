@@ -37,9 +37,7 @@ Edge, or Firefox — including lab machines you don't control.
 **Evaluation tooling**
 - **Session logger** — per-frame FPS, gesture state, and movement deltas,
   exportable as CSV
-- **Gesture-vs-mouse benchmark mode** — times how long it takes to match a
-  randomized target camera orientation under each input method, exported
-  as CSV, for a direct head-to-head comparison
+
 
 **Model support**
 - Load your own `.stl`, `.obj`, or `.ply` file, or use the built-in
