@@ -1,8 +1,8 @@
 // gestureController.js
 //
 // Turns raw hand landmarks (from handTracker.js) into pan / rotate / zoom
-// deltas that the 3D viewer can use. Includes an exponential moving average
-// (EMA) filter so small hand tremors don't cause jittery model movement.
+// deltas for the 3D viewer. Positions are smoothed with a simple EMA filter
+// so hand tremor doesn't turn into jittery model movement.
 //
 // Gesture rules:
 //   Two hands visible               -> ZOOM        (change in distance between palms)
@@ -12,75 +12,43 @@
 //   One hand, "counting" pose       -> SNAP_VIEW    (one-shot: front/back/left/
 //     (see VIEW_COUNTS below)                        right/top/bottom/iso)
 //   One hand, closed fist           -> FIST         (one-shot: reset view)
-//   One hand, open palm             -> ROTATE        (move the palm center)
-//   Anything else                   -> IDLE          (no movement)
+//   One hand, open palm             -> ROTATE       (move the palm center)
+//   Anything else                   -> IDLE         (no movement)
 //
 // --- View-snap counting gestures -------------------------------------------
-// Front (1) is index-only, deliberately excluding the thumb: an earlier
-// version used "thumb only" for Front, which is the exact same hand shape
-// as THUMBS_UP, so the two constantly got mixed up. Using index-only avoids
-// the thumb altogether, so Front no longer collides with the wireframe
-// toggle at all.
+// Front (1) is index-only rather than "thumb only", so it can't be confused
+// with THUMBS_UP.
 //
-// Back/Left (2-3) still count up from the thumb side (thumb+index,
-// thumb+index+middle). Right (4) intentionally skips the thumb too — a
-// four-finger "index+middle+ring+pinky" hold (no thumb) is easier to form
-// and hold steady than "thumb+index+middle+ring" was.
-//
-// Because Right doesn't require the thumb to be extended, its pattern
-// (index+middle+ring+pinky up, thumb curled) sits right next to ROTATE's
-// open-palm pattern (all 5 up) — the two differ only in the thumb. Getting
-// that thumb read right is what used to make ROTATE and Right collide: see
-// isThumbExtended()'s comment for the full story of that bug and the fix.
-// With a single, own-length-based extension test shared by isOpenPalm()
-// and viewPose(), Right only wins when the thumb is genuinely folded back
-// toward its own base, not just resting somewhere short of a dramatic
-// sideways fling — so an ordinary open, relaxed hand reads as ROTATE, and
-// Right requires an actually curled thumb. Counting poses are still
-// checked before the fist/open-palm fallback (see below), so a genuinely
-// curled-thumb four-finger hold still wins over ROTATE, as intended.
+// Back/Left (2-3) count up from the thumb side. Right (4) skips the thumb —
+// index+middle+ring+pinky is a steadier hold than thumb+index+middle+ring.
+// That makes Right just one finger away from a plain open palm (5 up), so
+// telling them apart comes down entirely to reading the thumb correctly —
+// see MAX_THUMB_RATIO_FOR_RIGHT below.
 //
 // Top/Bottom/Iso (5-7) count up from the pinky side instead of continuing
-// to 5 fingers, since "all 5 up" is indistinguishable from a plain open
-// palm (-> ROTATE). See VIEW_COUNTS for the exact patterns.
+// past 5, since "all 5 up" is just an open palm (-> ROTATE).
 //
-// FIST, THUMBS_UP/DOWN, and SNAP_VIEW are "action" gestures, not continuous
-// ones: they fire `result.action` exactly once when the pose is first
-// formed (a rising edge), then latch until the hand leaves that pose, so
-// holding a pose doesn't spam the action every single frame.
+// FIST, THUMBS_UP/DOWN, and SNAP_VIEW are one-shot actions: they fire
+// `result.action` once when the pose is first formed, then latch until the
+// hand leaves that pose, so holding it doesn't spam the action every frame.
 //
 // --- Classification order matters -----------------------------------------
 // Poses are checked most-specific-first: thumb pose, then pinch, then the
 // counting view poses, then fist, then open palm.
 //
-// Pinch is checked before the counting view poses because the "OK sign"
-// pinch shape (thumb+index tips touching, other 3 fingers raised) has the
-// exact same 5-finger boolean pattern as the "7"/ISO counting pose (see
-// VIEW_COUNTS.iso) once the 4 main fingers are read generically. The only
-// thing that tells them apart is whether the thumb and index are actually
-// touching/reaching for each other — which is what isPinch() checks (see
-// its comment) — so pinch must get first look, or a genuine OK-sign pinch
-// gets silently swallowed as an ISO view-snap instead. A real "7" count,
-// where the index just rests curled without ever reaching for the thumb,
-// still fails isPinch()'s reach check and falls through to the view-pose
-// check correctly.
+// Pinch goes before the counting poses because an "OK sign" (thumb+index
+// touching, other 3 fingers up) has the same finger pattern as the "7"/ISO
+// count — only isPinch()'s thumb/index reach check tells them apart, so it
+// needs first look.
 //
-// Pinch is checked before fist for the same kind of reason: a real pinch
-// attempt — where the index finger curls in toward the thumb and, on a lot
-// of hands, the other fingers relax slightly at the same time — could
-// otherwise satisfy isFist()'s "all four main fingers curled" test before
-// isPinch() ever got a chance to run, so pinches misfired as a fist/reset.
-// Checking the most specific, least-ambiguous signal (thumb-to-index
-// distance, combined with the index-reach check) before the broadest one
-// (are all fingers curled) fixes that class of misclassification generally.
-// Counting poses are checked before fist/open palm for the same reason:
-// e.g. the "4" pose (index+middle+ring+pinky up) has 4 of 5 fingers
-// extended, which would otherwise satisfy the open-palm threshold and
-// misfire as ROTATE.
+// Pinch also goes before fist: a real pinch attempt often relaxes the other
+// fingers too, which can look like "everything's curled" to isFist(). And
+// the counting poses go before fist/open-palm for the same reason — "4"
+// (index+middle+ring+pinky) is 4 of 5 fingers up, which would otherwise
+// pass the open-palm threshold.
 //
-// This file has no dependency on the DOM or on MediaPipe. It only works
-// with plain landmark data, so it can be unit tested on its own
-// (see tests/gestureController.test.js).
+// No DOM or MediaPipe dependency here — just plain landmark data, so this
+// is unit-testable on its own (see tests/gestureController.test.js).
 
 export const GestureState = {
   IDLE: "IDLE",
@@ -170,40 +138,18 @@ const FINGER_EXTENSION_RATIO = 1.1;
 
 // How long the thumb must measure — tip (landmark 4) to its own MCP knuckle
 // (landmark 2), normalized by hand scale — before it counts as "extended"
-// rather than curled/tucked. See isThumbExtended() below for why this
-// replaces both the old left/right x-position check and the old
-// distance-from-palm-center check.
+// rather than curled/tucked.
 const MIN_THUMB_EXTENSION_RATIO = 0.45;
 
 // Is the thumb straightened out, or folded back toward its own base?
 //
-// This deliberately does NOT look at where the tip sits relative to the
-// wrist, the palm center, or a left/right x-coordinate — only at the
-// thumb's own tip-to-MCP length. A folded/curled thumb is always short
-// (the tip doubles back near its own base) no matter which way the hand is
-// rotated or which side of the frame it's on; a straightened thumb is
-// always close to its full length, even when it's only resting moderately
-// out to the side rather than flung out dramatically. That makes this
-// check both rotation-invariant and independent of hand label/mirroring —
-// same spirit as the tip-vs-pip-from-wrist test used for the other 4
-// fingers below, just anchored to the thumb's own base instead of the
-// wrist, since the thumb doesn't fold the same way the other fingers do.
-//
-// This replaces two earlier, inconsistent thumb checks that used to live
-// in different places (see git history / the classification-order comment
-// near VIEW_COUNTS): a left/right x-position check in fingersExtended(),
-// and a separate distance-from-palm-center check in viewPose(). The two
-// disagreed constantly on an ordinary relaxed open hand — the x-check
-// called the thumb "extended" (correctly), while the distance-from-palm
-// check called it "not extended" unless the thumb was flung dramatically
-// out to the side (past 0.75x hand scale from the palm center), because a
-// merely-unfolded-but-not-hyperextended thumb often doesn't reach that far
-// from the palm. Since ROTATE (ISOPEN_PALM) trusted the lenient x-check but
-// the "4"/RIGHT view-snap pattern trusted the strict distance check, a
-// completely normal open-palm ROTATE gesture would read as "thumb tucked"
-// for view-snap purposes and get hijacked by SNAP_VIEW RIGHT, since
-// counting poses are checked before the open-palm fallback. Using one
-// consistent, own-length-based test everywhere fixes that collision.
+// This only looks at the thumb's own tip-to-MCP length, not its position
+// relative to the wrist or palm. A curled thumb is always short (the tip
+// doubles back near its own base), and a straightened one is always close
+// to full length — true no matter how the hand is rotated or which side of
+// the frame it's on. Same idea as the tip-vs-pip test the other 4 fingers
+// use below, just anchored to the thumb's own base since it doesn't fold
+// the same way they do.
 export function isThumbExtended(landmarks) {
   const scale = handScale(landmarks);
   return dist(landmarks[4], landmarks[2]) / scale >= MIN_THUMB_EXTENSION_RATIO;
@@ -212,20 +158,15 @@ export function isThumbExtended(landmarks) {
 // Returns [index, middle, ring, pinky, thumb] booleans, in that order.
 //
 // The 4 main fingers are classified by comparing each fingertip's distance
-// from the wrist (landmark 0) to its own pip joint's distance from the
-// wrist — NOT by a raw tip.y < pip.y screen-space comparison. A curled
-// finger folds its tip back toward the palm/wrist no matter how the hand
-// is rotated in the camera frame, so this distance comparison is
-// rotation-invariant. The old y-only check silently flips when the hand's
-// "up" direction is rotated relative to the camera — e.g. a hand held with
-// the fingers pointing down and toward the lens (as in a thumbs-down shown
-// front-on, folded fingers facing the camera) can have curled fingertips
-// that still land above their pip joints in image-y, misreading folded
-// fingers as extended and breaking poses like THUMBS_DOWN and FIST that
-// depend on "all 4 main fingers curled".
+// from the wrist (landmark 0) against its own pip joint's distance from the
+// wrist, rather than a raw tip.y < pip.y comparison in image space. That
+// distance comparison holds regardless of how the hand is rotated toward
+// the camera; a plain y-comparison can flip when the hand is angled (e.g.
+// fingers pointing down and toward the lens), reading curled fingers as
+// extended.
 //
-// The thumb uses isThumbExtended() instead — see its comment for why it
-// needs an own-length test rather than either of the above.
+// The thumb uses isThumbExtended() instead, since it doesn't fold the same
+// way the other fingers do.
 export function fingersExtended(landmarks, label) {
   const wrist = landmarks[0];
   const tips = [8, 12, 16, 20];
@@ -245,74 +186,42 @@ export function isOpenPalm(landmarks, label) {
   return fingersExtended(landmarks, label).filter(Boolean).length >= 4;
 }
 
-// How far the index fingertip must sit from its OWN knuckle (landmark 5),
+// How far the index fingertip must sit from its own knuckle (landmark 5),
 // normalized by hand scale, before it counts as "reaching" toward the thumb
-// rather than just resting curled in a fist. A resting/curled index tip
-// barely moves from its own knuckle at all (it folds back on itself); a
-// deliberate pinch — even an imprecise, "not fully closed" webcam one —
-// always involves the index reaching noticeably away from its knuckle to
-// meet the thumb.
-//
-// This same check is also what tells a deliberate "OK sign" pinch (thumb
-// and index tips touching, other 3 fingers raised) apart from the "7"/ISO
-// counting pose, which looks identical at the level of "which fingers are
-// up" (see the ordering comment near the top of this file and
-// VIEW_COUNTS.iso): a real OK sign has the index reaching for the thumb,
-// while a real "7" count just leaves the index resting curled.
+// rather than just resting curled. A curled index tip barely moves from its
+// own knuckle; a real pinch — even a loose, not-fully-closed one — always
+// reaches noticeably away from the knuckle toward the thumb. This is also
+// what separates an "OK sign" pinch from the "7"/ISO counting pose, which
+// otherwise has the exact same fingers-up pattern.
 const MIN_INDEX_REACH_FOR_PINCH = 0.2;
 
-// Once a pinch is actively driving PAN, a single noisy frame that dips just
-// under isPinch()'s entry bar (distance ticking a hair over threshold, or
-// reach ticking a hair under MIN_INDEX_REACH_FOR_PINCH - both easily caused
-// by ordinary webcam/MediaPipe jitter, especially at a "fully closed" pinch
-// where the thumb and index tips are right on top of each other and the
-// tracker's estimate of exactly where they are gets noisiest) is enough to
-// make GestureController.update() treat the pinch as released. A release
-// resets _prevPinchPos, so the very next frame - even though the person
-// never actually let go - starts the drag over from scratch with no delta.
-// Over a real multi-second drag this repeatedly throws away motion and
-// makes the pan feel like it "loses" the gesture and grabs something else
-// (FIST/ROTATE/IDLE) for a frame, i.e. exactly the "gets mixed up" feeling.
-//
-// PINCH_RELEASE_MULTIPLIER fixes this with hysteresis (a Schmitt trigger):
-// isPinch()'s strict distance+reach check is still what's required to
-// *enter* PAN, but once active, GestureController only checks the looser
-// distance-only bar below to *stay* in PAN, so one noisy frame right at the
-// boundary doesn't chop a continuous drag into pieces.
+// Hysteresis for staying in PAN once a pinch is active: a single noisy
+// frame that dips just past isPinch()'s entry bar (easy to hit right when
+// the tips are touching, where tracking is noisiest) would otherwise read
+// as a release, reset the drag, and cost a frame of motion. So the strict
+// isPinch() check is only required to *enter* PAN — once active, staying
+// in PAN just needs the looser distance-only bar below.
 export const PINCH_RELEASE_MULTIPLIER = 1.4;
 
 export function isPinch(landmarks, threshold = 0.4) {
   const scale = handScale(landmarks);
   const distance = dist(landmarks[4], landmarks[8]) / scale;
 
-  // Guard against a resting fist whose thumb happens to land close to the
-  // curled index tip in the 2D image — common when the knuckles face the
-  // camera (a fist "punching" toward the lens), where perspective can put
-  // the thumb tip and the folded index tip right on top of each other even
-  // though neither finger is doing anything pinch-like. That proximity is
-  // coincidental, not deliberate: the index finger itself never moved from
-  // its resting, curled position. A genuine pinch always involves the index
-  // reaching away from its own knuckle toward the thumb, so requiring that
-  // reach — in addition to the raw thumb-index distance — keeps a plain
-  // fist from being misread as PAN while still easily catching real
-  // pinches, which move the index tip well clear of its knuckle.
+  // A fist facing the camera can put the thumb tip and the folded index
+  // tip right on top of each other by pure perspective, with neither
+  // finger doing anything pinch-like. Requiring the index to actually
+  // reach away from its own knuckle rules that out.
   const indexReach = dist(landmarks[8], landmarks[5]) / scale;
   const reaching = indexReach > MIN_INDEX_REACH_FOR_PINCH;
 
   return { pinching: distance < threshold && reaching, distance };
 }
 
-// A fist is "the four main fingers curled" — the thumb is intentionally
-// ignored here so isThumbPose() (checked first, see below) can claim the
-// thumb-extended case, and isPinch() (also checked first) can claim the
-// thumb-near-index case, before either falls through to a generic fist.
-//
-// A real, relaxed fist very often rests with the thumb sitting up along the
-// side of the curled fingers rather than tucked flush against the palm —
-// that's still a fist, not a thumbs-up. isThumbPose() below requires the
-// thumb to be clearly pulled away from the hand AND close to vertical
-// before it claims a pose, specifically so a normal fist's resting thumb
-// falls through to here instead of being misread as THUMBS_UP.
+// A fist is "the four main fingers curled" — the thumb is ignored here
+// since isThumbPose() and isPinch() (both checked earlier) already claim
+// their own thumb cases. A relaxed fist often rests with the thumb up
+// along the curled fingers rather than tucked flush, and that's still a
+// fist, not a thumbs-up.
 export function isFist(landmarks, label) {
   const [index, middle, ring, pinky] = fingersExtended(landmarks, label);
   return !index && !middle && !ring && !pinky;
@@ -325,16 +234,11 @@ export function isFist(landmarks, label) {
 // its knuckle.
 const THUMB_ANGLE_FROM_VERTICAL_DEG = 40;
 
-// THUMBS_UP/DOWN needs a stricter bar than the general isThumbExtended()
-// used elsewhere. isThumbExtended()'s lower bar (0.45) just means "unfolded
-// from the fist a bit," which is also true mid-reach — e.g. a pinch attempt
-// swings the thumb tip up and away from its own MCP toward the index finger,
-// which is enough "length" to clear that lower bar even though the hand is
-// still mid-pinch, not doing a deliberate thumbs-up. THUMBS_UP/DOWN is
-// meant to be an unambiguous, deliberately exaggerated pose, so it needs the
-// thumb pulled out much farther — close to its full extended length — before
-// claiming the gesture, so a pinch- or count-in-progress can't be caught by
-// isThumbPose() (checked first) before isPinch() or viewPose() get a look.
+// THUMBS_UP/DOWN needs a stricter bar than the general isThumbExtended().
+// The general 0.45 threshold just means "unfolded a bit," which is also
+// true mid-pinch as the thumb swings toward the index finger. A deliberate
+// thumbs-up should be unambiguous, so this requires close to full
+// extension before claiming the pose.
 const MIN_THUMB_EXTENSION_RATIO_FOR_THUMB_POSE = 1.0;
 
 function isThumbClearlyExtended(landmarks) {
@@ -352,8 +256,6 @@ export function isThumbPose(landmarks, label) {
   const [index, middle, ring, pinky] = fingersExtended(landmarks, label);
   if (index || middle || ring || pinky) return null;
 
-  // The thumb must be clearly, deliberately extended — a stricter bar than
-  // isThumbExtended()'s, see MIN_THUMB_EXTENSION_RATIO_FOR_THUMB_POSE above.
   if (!isThumbClearlyExtended(landmarks)) return null;
 
   const thumbTip = landmarks[4];
@@ -369,38 +271,42 @@ export function isThumbPose(landmarks, label) {
   return dy < 0 ? "up" : "down";
 }
 
-// Matches the 4 main fingers + thumb against the VIEW_COUNTS table (see the
-// big comment at the top of the file). Returns a view name ("front",
-// "iso", ...) or null.
+// RIGHT (4 fingers, no thumb) is one bit away from an open palm (5
+// fingers) — they only differ on the thumb. isThumbExtended()'s normal
+// 0.45 cutoff is fine for telling "roughly extended" from "roughly
+// curled", but it's not a wide enough margin for this specific pair: a
+// relaxed open hand can have its thumb sitting close enough to that line
+// that one so-so frame reads it as "not extended," which then matches
+// RIGHT's pattern exactly and steals the gesture from ROTATE.
 //
-// Uses fingersExtended()'s [index, middle, ring, pinky, thumb] pattern
-// as-is — including its thumb entry (see isThumbExtended()) — rather than
-// recomputing thumb extension separately. Previously this recomputed the
-// thumb boolean with its own distance-from-palm-center check, which used a
-// much stricter bar than fingersExtended()'s (then-separate) thumb check;
-// that mismatch is exactly what let an ordinary open-palm ROTATE gesture
-// get misread as the "4"/RIGHT counting pose, since the thumb didn't have
-// to be tucked in at all to fail the old, stricter distance check — see
-// isThumbExtended()'s comment for the full story. Using a single shared
-// thumb signal for both isOpenPalm() and viewPose() keeps them from
-// disagreeing about the exact same hand shape.
+// So RIGHT gets its own, stricter bar for "thumb is actually tucked" —
+// well under 0.45, not just on the other side of it. Anything in between
+// just falls through to ROTATE/IDLE instead of guessing.
+const MAX_THUMB_RATIO_FOR_RIGHT = 0.3;
+
+// Matches the 4 main fingers + thumb against the VIEW_COUNTS table above.
+// Returns a view name ("front", "iso", ...) or null.
 export function viewPose(landmarks, label) {
   const pattern = fingersExtended(landmarks, label);
   for (const [name, expected] of Object.entries(VIEW_COUNTS)) {
-    if (expected.every((v, i) => v === pattern[i])) return name;
+    if (!expected.every((v, i) => v === pattern[i])) continue;
+
+    if (name === "right") {
+      const thumbRatio = dist(landmarks[4], landmarks[2]) / handScale(landmarks);
+      if (thumbRatio >= MAX_THUMB_RATIO_FOR_RIGHT) continue; // thumb isn't clearly tucked, let ROTATE have it
+    }
+
+    return name;
   }
   return null;
 }
 
 export class GestureController {
-  // panGain default of 125 (not some much smaller number) is deliberate:
-  // cadViewer.js's pan()/rotate() apply PAN_UNIT=0.01 and ROTATE_UNIT=0.005
-  // to these deltas, only 2x apart, so for a pinch-drag to feel as
-  // responsive as ROTATE for the same hand movement, panGain needs to be
-  // in the same ballpark as rotateGain (250) - roughly half of it, to
-  // offset PAN_UNIT being 2x ROTATE_UNIT. A much smaller panGain (e.g. an
-  // order of magnitude or more below rotateGain) makes PAN feel dead even
-  // at max slider, since the pan speed slider's range is scaled to match.
+  // panGain sits roughly half of rotateGain by design: cadViewer.js scales
+  // pan deltas by PAN_UNIT=0.01 vs rotate's ROTATE_UNIT=0.005, so matching
+  // gains at that ratio keeps pan feeling as responsive as rotate for the
+  // same hand movement. (cadViewer.js also caps how far a drag can carry
+  // the model, so a high gain moves it fast without launching it off-screen.)
   constructor({ pinchThreshold = 0.4, panGain = 125.0, rotateGain = 250.0, zoomGain = 8.0 } = {}) {
     this.pinchThreshold = pinchThreshold;
     this.panGain = panGain;
@@ -504,34 +410,17 @@ export class GestureController {
       }
       this._thumbLatched = null;
 
-      // 2. Pinch next: thumb-to-index distance, combined with the
-      //    index-reach check inside isPinch() (the index tip must actually
-      //    be reaching away from its own knuckle, toward the thumb — not
-      //    just resting curled nearby), is checked before both the counting
-      //    view poses and the fist test.
-      //
-      //    This matters most for the "OK sign" pinch shape (thumb and
-      //    index tips touching to form a circle, other 3 fingers raised —
-      //    see the isPinch() comment): with the 4 main fingers now read
-      //    generically via fingersExtended(), that shape's boolean pattern
-      //    ([index curled, middle/ring/pinky up, thumb tucked]) is
-      //    identical to the "7"/ISO counting pose's pattern (see
-      //    VIEW_COUNTS.iso). The two are only distinguishable by whether
-      //    the thumb and index are actually touching/reaching for each
-      //    other (a deliberate pinch) or just independently curled/tucked
-      //    (a counting pose) — exactly what isPinch() checks. So pinch is
-      //    checked first: a real OK-sign pinch always satisfies isPinch()
-      //    and is claimed here, while a genuine "7" count (index resting
-      //    curled, never reaching toward the thumb) fails isPinch()'s reach
-      //    check and correctly falls through to the view-pose check below.
+      // 2. Pinch next, before the counting poses and fist. An "OK sign"
+      //    (thumb+index touching, other 3 up) has the same finger pattern
+      //    as the "7"/ISO count — isPinch()'s reach check is what tells
+      //    them apart, so it needs to run first.
       const enterCheck = isPinch(lm, this.pinchThreshold);
       const distance = enterCheck.distance;
       result.pinchDistance = distance;
 
-      // Hysteresis: while a pinch is already actively driving PAN, only
-      // require the looser distance-only bar to stay classified as PAN
-      // instead of re-passing isPinch()'s stricter entry check every
-      // single frame. See PINCH_RELEASE_MULTIPLIER's comment for why.
+      // Hysteresis: once a pinch is driving PAN, only require the looser
+      // distance-only bar to stay classified as PAN (see
+      // PINCH_RELEASE_MULTIPLIER above).
       const pinching = this._pinchActive
         ? distance < this.pinchThreshold * PINCH_RELEASE_MULTIPLIER
         : enterCheck.pinching;
@@ -559,10 +448,9 @@ export class GestureController {
         return result;
       }
 
-      // 3. Counting view-snap poses next: an exact match against all 5
-      //    finger booleans at once (see VIEW_COUNTS). Checked before the
-      //    open-palm fallback further down since some counts (e.g. "4")
-      //    are otherwise "almost open".
+      // 3. Counting view-snap poses: exact match against all 5 finger
+      //    booleans (see VIEW_COUNTS). Checked before the open-palm
+      //    fallback since "4" is otherwise "almost open".
       const view = viewPose(lm, label);
       if (view) {
         this._resetSingleHand();
@@ -594,12 +482,9 @@ export class GestureController {
       }
       this._fistLatched = false;
 
-      // A pinch attempt that doesn't fully close (common with webcam noise
-      // and single-camera depth ambiguity) still leaves the other 4 fingers
-      // reading as "extended", so without this buffer it silently falls
-      // through to isOpenPalm() and gets misread as ROTATE instead of just
-      // not registering. Require the fingers to be clearly spread out
-      // (well past the pinch threshold) before allowing that fallback.
+      // An unfinished pinch attempt still leaves the other 4 fingers
+      // reading as extended, so require the fingers to be clearly spread
+      // out before falling through to open-palm/ROTATE.
       const clearlyNotPinching = distance > this.pinchThreshold * 1.5;
 
       if (clearlyNotPinching && isOpenPalm(lm, label)) {
