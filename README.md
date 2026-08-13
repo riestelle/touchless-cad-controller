@@ -31,17 +31,45 @@ Edge, or Firefox — including lab machines you don't control.
 - ✋ **Pinch + drag** (one hand) — pan the model
 - 🖐️ **Open palm, move** (one hand) — rotate the model
 - 🤲 **Two hands**, apart/together — zoom in/out
+- ✊ **Fist** (one hand) — reset the view
+- 👍👎 **Thumbs up / down** — toggle wireframe on/off
 - Live pinch-distance readout so you can see exactly how close a pinch is
   to registering, instead of guessing
+
+**Snap to view**
+- Count 1–7 with one hand (thumb side first, then pinky side) to jump to a
+  named camera angle — Front, Back, Left, Right, Top, Bottom, or Iso
+- The same views are also bound to number keys `1`–`7` and to buttons in
+  the viewport toolbar, in case a gesture is inconvenient or ambiguous
+  (pose `1`, thumb-only, is identical to a thumbs-up, so Front is
+  gesture-free by design — use the key or button instead)
+
+**Measurement**
+- **Measure** tool — click two points on the loaded model to get the
+  distance between them, in model units
+
+**Sensitivity & calibration**
+- Adjustable pinch threshold, pan speed, rotate speed, and zoom speed
+- **Calibrate pinch** — a guided 3-second routine that samples your open
+  vs. pinched hand distance and sets the threshold automatically, instead
+  of hand-tuning a slider
 
 **Evaluation tooling**
 - **Session logger** — per-frame FPS, gesture state, and movement deltas,
   exportable as CSV
-
+- **Benchmark mode** — times how long it takes to match a randomly
+  generated target view using gestures vs. a mouse, so you can compare
+  input methods with real numbers instead of impressions; results are
+  downloadable as CSV
 
 **Model support**
 - Load your own `.stl`, `.obj`, or `.ply` file, or use the built-in
   placeholder part — no CLI flags, just a file picker
+
+**Mouse fallback**
+- Every gesture has a mouse or keyboard equivalent — drag to rotate,
+  right-drag to pan, scroll to zoom, number keys or toolbar buttons for
+  snap-to-view — so the app is fully usable without a webcam
 
 ## Tech stack
 

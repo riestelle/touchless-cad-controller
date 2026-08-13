@@ -320,6 +320,66 @@ button.active,
   margin: -0.4rem 0 0.9rem;
 }
 
+.gesture-details {
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  padding: 0 0.75rem;
+  margin-top: 1.4rem;
+}
+
+.gesture-details summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 0.75rem 0;
+  font-size: 0.95rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.gesture-details summary::-webkit-details-marker {
+  display: none;
+}
+
+.gesture-details summary::after {
+  content: "▸";
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  transition: transform 0.15s ease;
+}
+
+.gesture-details[open] summary::after {
+  transform: rotate(90deg);
+}
+
+.gesture-details summary:hover {
+  color: var(--text);
+}
+
+.gesture-details summary:focus-visible {
+  outline: 2px solid var(--accent-blue);
+  outline-offset: 2px;
+}
+
+.gesture-details h2 {
+  margin: 0 0 0.9rem;
+}
+
+.gesture-details > h2:first-of-type {
+  margin-top: 0;
+}
+
+.gesture-details .gesture-legend {
+  margin-bottom: 1rem;
+}
+
+.gesture-details > *:last-child {
+  margin-bottom: 1rem;
+}
+
 .hint {
   font-size: 0.78rem;
   color: var(--text-dim);
