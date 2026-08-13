@@ -58,14 +58,27 @@ let fps = 0;
 const sessionLog = [];
 
 // --- Mode-display smoothing ------------------------------------------------
-// gesture.state has no memory of previous frames, so showing it directly in
-// the "Mode" pill lets any single noisy frame (a hand mid-transition, a
-// tracking glitch) flash across the display like a real pose change.
+// gesture.state is recomputed fresh every single frame straight from the
+// current landmarks, with no memory of previous frames. That's correct for
+// driving actions (the controller already latches those so they don't
+// re-fire), but showing it directly in the "Mode" pill means any one noisy
+// frame — a hand mid-transition between poses, a momentary tracking glitch —
+// flashes across the screen just like a real, held pose would. In practice
+// that showed up as things like a held THUMBS DOWN being immediately
+// followed by a flicker through IDLE/PAN/LEFT/etc. that the person was never
+// actually doing, making it hard to tell whether a gesture had really
+// registered.
 //
-// This shows whichever state was most common over the last
-// MODE_SMOOTHING_WINDOW frames instead, so one stray frame can't flip the
-// label. Only the display is affected — pan/rotate/zoom and one-shot
-// actions still come straight from the controller every frame.
+// This buffers the last MODE_SMOOTHING_WINDOW raw states and displays
+// whichever one is most common across that window, so a single stray frame
+// can't flip the display on its own — it takes a run of consecutive frames
+// agreeing before the shown mode actually changes. At ~30fps this costs
+// roughly 150-200ms of extra display latency, which is unnoticeable for a
+// status readout but enough to smooth out frame-to-frame jitter. This only
+// affects what's displayed — pan/rotate/zoom and one-shot actions
+// (fist/thumbs/snap-view) still come straight from the controller every
+// frame, so movement stays responsive and actions still fire on their real
+// rising edge.
 const MODE_SMOOTHING_WINDOW = 6;
 let modeHistory = [];
 

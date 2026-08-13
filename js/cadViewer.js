@@ -76,7 +76,6 @@ export class CadViewer {
     this.scene.add(fillLight);
 
     this.currentObject = null;
-    this._panLimit = null; // set once an object is framed, see _frameObject()
     this.target = new THREE.Vector3(0, 0, 0);
     this.spherical = new THREE.Spherical(3, Math.PI / 2.3, Math.PI / 4);
     // Home orientation, restored by resetView(). Captured once here (not
@@ -133,11 +132,6 @@ export class CadViewer {
     const fitRadius = Math.max(size.length() * 0.6, 0.5);
     this.target.set(0, 0, 0);
     this.spherical.radius = THREE.MathUtils.clamp(fitRadius * 2.2, MIN_RADIUS, MAX_RADIUS);
-
-    // Cap how far a pinch-drag can carry the target from the model, so a
-    // fast drag can't pan it clean off-screen.
-    this._panLimit = fitRadius * 3;
-
     this._updateCameraPosition();
   }
 
@@ -183,7 +177,6 @@ export class CadViewer {
       .multiplyScalar(-dx * PAN_UNIT)
       .add(up.multiplyScalar(dy * PAN_UNIT));
     this.target.add(offset);
-    if (this._panLimit) this.target.clampLength(0, this._panLimit);
     this._updateCameraPosition();
   }
 
@@ -206,7 +199,12 @@ export class CadViewer {
     this._updateCameraPosition();
   }
 
-  // Re-fits the camera to the object and restores the home orientation.
+  // Re-fits the camera distance/target to the current object AND restores
+  // the home orientation. Previously this only called _frameObject(),
+  // which re-centers the target and refits the zoom distance but never
+  // touches spherical.theta/phi — so after rotating the model, "reset
+  // view" would leave the camera pointed the same direction it already
+  // was, which looked like the button was doing nothing.
   resetView() {
     this.spherical.theta = this._homeSpherical.theta;
     this.spherical.phi = this._homeSpherical.phi;
