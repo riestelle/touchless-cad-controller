@@ -16,19 +16,28 @@
 //   Anything else                   -> IDLE          (no movement)
 //
 // --- View-snap counting gestures -------------------------------------------
-// Views 1-4 count up starting from the thumb side of the hand (thumb, then
-// thumb+index, thumb+index+middle, thumb+index+middle+ring). Views 5-7
-// switch to counting down from the pinky side instead (pinky, pinky+ring,
-// pinky+ring+middle) rather than continuing to 5 fingers, since "all 5 up"
-// is indistinguishable from a plain open palm (-> ROTATE). See VIEW_COUNTS.
+// Front (1) is index-only, deliberately excluding the thumb: an earlier
+// version used "thumb only" for Front, which is the exact same hand shape
+// as THUMBS_UP, so the two constantly got mixed up. Using index-only avoids
+// the thumb altogether, so Front no longer collides with the wireframe
+// toggle at all.
 //
-// IMPORTANT CAVEAT: "1" (front) is defined as "thumb up, other 4 curled" —
-// which is the exact same hand shape as THUMBS_UP. There is no landmark
-// signal that tells those two poses apart; they are the same pose. Thumb
-// pose is checked first (see ordering below), so making that shape always
-// toggles wireframe, never snaps to Front. Front is still reachable via the
-// "1" key or the on-screen button (see main.js) — just not via this exact
-// gesture. Every other count (2-7) is unambiguous.
+// Back/Left (2-3) still count up from the thumb side (thumb+index,
+// thumb+index+middle). Right (4) intentionally skips the thumb too — a
+// four-finger "index+middle+ring+pinky" hold (no thumb) is easier to form
+// and hold steady than "thumb+index+middle+ring" was.
+//
+// TRADE-OFF: because Right no longer requires the thumb to be extended, a
+// relaxed open hand or a sloppy/incomplete pinch attempt where the thumb
+// happens to rest close to the palm can also match Right's pattern (index
+// + middle + ring + pinky up, thumb tucked). Counting poses are checked
+// before the fist/open-palm fallback (see below), so in that situation
+// Right wins over ROTATE. In practice this is rare — a deliberate open
+// hand or pinch attempt usually keeps the thumb held out, not tucked in.
+//
+// Top/Bottom/Iso (5-7) count up from the pinky side instead of continuing
+// to 5 fingers, since "all 5 up" is indistinguishable from a plain open
+// palm (-> ROTATE). See VIEW_COUNTS for the exact patterns.
 //
 // FIST, THUMBS_UP/DOWN, and SNAP_VIEW are "action" gestures, not continuous
 // ones: they fire `result.action` exactly once when the pose is first
@@ -60,7 +69,7 @@
 // distance, combined with the index-reach check) before the broadest one
 // (are all fingers curled) fixes that class of misclassification generally.
 // Counting poses are checked before fist/open palm for the same reason:
-// e.g. the "4" pose (thumb+index+middle+ring up) has 4 of 5 fingers
+// e.g. the "4" pose (index+middle+ring+pinky up) has 4 of 5 fingers
 // extended, which would otherwise satisfy the open-palm threshold and
 // misfire as ROTATE.
 //
@@ -109,10 +118,10 @@ const VIEW_STATE = {
 // up from the thumb side for 1-4, then count up from the pinky side for
 // 5-7 (see the big comment above for why it isn't a straight 1-7 count).
 const VIEW_COUNTS = {
-  front: [false, false, false, false, true], // 1: thumb only
+  front: [true, false, false, false, false], // 1: index only
   back: [true, false, false, false, true], // 2: thumb + index
   left: [true, true, false, false, true], // 3: thumb + index + middle
-  right: [true, true, true, false, true], // 4: thumb + index + middle + ring
+  right: [true, true, true, true, false], // 4: index + middle + ring + pinky
   top: [false, false, false, true, false], // 5: pinky only
   bottom: [false, false, true, true, false], // 6: pinky + ring
   iso: [false, true, true, true, false], // 7: pinky + ring + middle

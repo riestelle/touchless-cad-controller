@@ -33,8 +33,14 @@ function openHandLandmarks() {
   lm[0] = { x: 0.5, y: 0.9, z: 0 }; // wrist
   lm[1] = { x: 0.65, y: 0.8, z: 0 };
   lm[2] = { x: 0.62, y: 0.75, z: 0 }; // thumb MCP
-  lm[3] = { x: 0.58, y: 0.65, z: 0 };
-  lm[4] = { x: 0.5, y: 0.55, z: 0 }; // thumb TIP (x < mcp.x)
+  lm[3] = { x: 0.4, y: 0.55, z: 0 };
+  // Thumb TIP: a natural open/spread hand (the ROTATE pose) holds the thumb
+  // out and away from the palm, not tucked in — clearly extended per the
+  // distance-from-palm test in viewPose(), so this fixture can never be
+  // mistaken for a "Right" snap-view count (which is thumb-tucked in).
+  // Still satisfies x < mcp.x (the separate x-position check other tests
+  // rely on).
+  lm[4] = { x: 0.2, y: 0.35, z: 0 };
   lm[5] = { x: 0.45, y: 0.6, z: 0 }; // index MCP
   lm[6] = { x: 0.45, y: 0.5, z: 0 }; // index PIP
   lm[7] = { x: 0.45, y: 0.4, z: 0 };
@@ -418,14 +424,22 @@ test("ZOOM is positive when hands move apart", () => {
   assert.ok(result.zoom > 0);
 });
 
-test("a not-quite-closed pinch is IDLE, not misread as ROTATE", () => {
+test("a not-quite-closed pinch with the thumb still out is IDLE, not misread as ROTATE", () => {
   // Thumb has moved noticeably toward the index finger (this is what a
   // real, slightly-imprecise pinch attempt looks like on a webcam) but
-  // doesn't cross the pinch threshold. The other 4 fingers still read as
-  // "extended," so without a buffer this used to fall through to
+  // doesn't cross the pinch threshold, and stays far enough from the palm
+  // that it doesn't read as "tucked" either. The other 4 fingers still
+  // read as "extended," so without a buffer this used to fall through to
   // isOpenPalm() and get classified as ROTATE.
+  //
+  // NOTE: if the thumb tucks in close to the palm during a sloppy pinch
+  // attempt (distance-from-palm below THUMB_EXTENSION_THRESHOLD), the
+  // hand shape becomes indistinguishable from the "Right" snap-view count
+  // (index+middle+ring+pinky, thumb tucked) and SNAP_VIEW wins instead —
+  // that's an accepted trade-off of dropping the thumb from that pose,
+  // see the big comment at the top of the file.
   const lm = openHandLandmarks();
-  lm[4] = { x: 0.5, y: 0.5, z: 0 }; // thumb tip moved toward index, not touching
+  lm[4] = { x: 0.65, y: 0.32, z: 0 }; // thumb tip drifted toward index, not touching, not tucked
 
   const controller = new GestureController({ pinchThreshold: 0.4 });
   const result = controller.update([{ landmarks: lm, label: "Right" }]);
@@ -473,7 +487,7 @@ test("viewPose() recognizes counts 2-7 (thumb-side then pinky-side)", () => {
   assert.equal(viewPose(countPoseLandmarks({ thumb: true, index: true }), "Right"), "back"); // 2
   assert.equal(viewPose(countPoseLandmarks({ thumb: true, index: true, middle: true }), "Right"), "left"); // 3
   assert.equal(
-    viewPose(countPoseLandmarks({ thumb: true, index: true, middle: true, ring: true }), "Right"),
+    viewPose(countPoseLandmarks({ index: true, middle: true, ring: true, pinky: true }), "Right"),
     "right" // 4
   );
   assert.equal(viewPose(countPoseLandmarks({ pinky: true }), "Right"), "top"); // 5
@@ -481,11 +495,10 @@ test("viewPose() recognizes counts 2-7 (thumb-side then pinky-side)", () => {
   assert.equal(viewPose(countPoseLandmarks({ pinky: true, ring: true, middle: true }), "Right"), "iso"); // 7
 });
 
-test("viewPose() reads count 1 (thumb only) as 'front' at the pure finger-pattern level", () => {
-  // viewPose() only looks at which fingers are up — it has no opinion about
-  // the thumb-pose collision. GestureController resolves that collision
-  // (see the next test); this just confirms the pattern match itself.
-  assert.equal(viewPose(countPoseLandmarks({ thumb: true }), "Right"), "front");
+test("viewPose() reads count 1 (index only) as 'front'", () => {
+  // Front deliberately excludes the thumb (see the big comment at the top
+  // of the file) so it can never be confused with THUMBS_UP.
+  assert.equal(viewPose(countPoseLandmarks({ index: true }), "Right"), "front");
 });
 
 test("viewPose() returns null for a fist (0 fingers) and an open hand (5 fingers)", () => {
@@ -493,10 +506,10 @@ test("viewPose() returns null for a fist (0 fingers) and an open hand (5 fingers
   assert.equal(viewPose(openHandLandmarks(), "Right"), null);
 });
 
-test("GestureController: count 1 (thumb only) resolves to THUMBS_UP, not FRONT — same physical pose", () => {
-  // This is the documented collision: "thumb up, rest curled" is exactly
-  // the THUMBS_UP gesture, so that gesture wins and Front stays reachable
-  // only via the "1" key/button, not this exact hand shape.
+test("GestureController: thumb-only pose still resolves to THUMBS_UP, not FRONT", () => {
+  // Front no longer shares a pose with THUMBS_UP (it's index-only now), but
+  // a plain thumb-only hand shape should still resolve to THUMBS_UP rather
+  // than falling through to some other state.
   const controller = new GestureController();
   const result = controller.update([{ landmarks: countPoseLandmarks({ thumb: true }), label: "Right" }]);
   assert.equal(result.state, GestureState.THUMBS_UP);
@@ -524,11 +537,11 @@ test("GestureController fires SNAP_VIEW once for an unambiguous count, then latc
 });
 
 test("GestureController: count 4 (4 of 5 fingers up) is SNAP_VIEW, not misread as ROTATE", () => {
-  // Regression guard: "4" (thumb+index+middle+ring) satisfies isOpenPalm()'s
+  // Regression guard: "4" (index+middle+ring+pinky) satisfies isOpenPalm()'s
   // ">= 4 extended" threshold too, so counting-view must win before the
   // open-palm fallback ever runs.
   const controller = new GestureController();
-  const lm = countPoseLandmarks({ thumb: true, index: true, middle: true, ring: true });
+  const lm = countPoseLandmarks({ index: true, middle: true, ring: true, pinky: true });
   const result = controller.update([{ landmarks: lm, label: "Right" }]);
   assert.equal(result.state, GestureState.RIGHT);
   assert.equal(result.rotate, null);
