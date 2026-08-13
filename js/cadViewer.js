@@ -15,11 +15,24 @@ import { PLYLoader } from "three/addons/loaders/PLYLoader.js";
 
 // How strongly each gesture delta moves the camera. Raise these to make a
 // gesture feel more sensitive, lower them to make it feel calmer.
-const PAN_UNIT = 0.03;
+const PAN_UNIT = 0.01;
 const ROTATE_UNIT = 0.005;
-const ZOOM_UNIT = 0.05;
+const ZOOM_UNIT = 0.02;
 const MIN_RADIUS = 0.5;
 const MAX_RADIUS = 50;
+
+// Named camera orientations, CAD-viewer style (front/top/iso, etc). Radius
+// (zoom level) is deliberately left untouched by a snap — only the
+// orientation changes, same as clicking a face on a "view cube."
+const VIEW_PRESETS = {
+  front: { theta: 0, phi: Math.PI / 2 },
+  back: { theta: Math.PI, phi: Math.PI / 2 },
+  right: { theta: Math.PI / 2, phi: Math.PI / 2 },
+  left: { theta: -Math.PI / 2, phi: Math.PI / 2 },
+  top: { theta: 0, phi: 0.05 },
+  bottom: { theta: 0, phi: Math.PI - 0.05 },
+  iso: { theta: Math.PI / 4, phi: Math.PI / 2.3 },
+};
 
 function buildSamplePart() {
   // A simple bracket-like mesh so the demo works with zero downloads.
@@ -65,6 +78,18 @@ export class CadViewer {
     this.currentObject = null;
     this.target = new THREE.Vector3(0, 0, 0);
     this.spherical = new THREE.Spherical(3, Math.PI / 2.3, Math.PI / 4);
+    // Home orientation, restored by resetView(). Captured once here (not
+    // read back off `this.spherical` later) so it stays correct even
+    // though spherical.theta/phi are mutated continuously by rotate().
+    this._homeSpherical = { phi: this.spherical.phi, theta: this.spherical.theta };
+
+    // Measurement tool state: up to 2 picked points, their marker meshes,
+    // and the connecting line, all held in one group so clearing is a
+    // single removal instead of tracking each mesh separately.
+    this._raycaster = new THREE.Raycaster();
+    this._measureGroup = new THREE.Group();
+    this.scene.add(this._measureGroup);
+    this._measurePoints = [];
 
     this._updateCameraPosition();
     this.resizeToContainer();
@@ -174,8 +199,91 @@ export class CadViewer {
     this._updateCameraPosition();
   }
 
+  // Re-fits the camera distance/target to the current object AND restores
+  // the home orientation. Previously this only called _frameObject(),
+  // which re-centers the target and refits the zoom distance but never
+  // touches spherical.theta/phi — so after rotating the model, "reset
+  // view" would leave the camera pointed the same direction it already
+  // was, which looked like the button was doing nothing.
   resetView() {
-    if (this.currentObject) this._frameObject(this.currentObject);
+    this.spherical.theta = this._homeSpherical.theta;
+    this.spherical.phi = this._homeSpherical.phi;
+    if (this.currentObject) {
+      this._frameObject(this.currentObject);
+    } else {
+      this.target.set(0, 0, 0);
+      this._updateCameraPosition();
+    }
+  }
+
+  // Snaps the camera to a named orientation (front/back/left/right/top/
+  // bottom/iso) without touching the current zoom level. Returns false for
+  // an unknown name so callers can no-op safely.
+  snapToView(name) {
+    const preset = VIEW_PRESETS[name];
+    if (!preset) return false;
+    this.spherical.theta = preset.theta;
+    this.spherical.phi = preset.phi;
+    this._updateCameraPosition();
+    return true;
+  }
+
+  setWireframe(enabled) {
+    if (!this.currentObject) return;
+    this.currentObject.traverse((child) => {
+      if (child.isMesh && child.material) child.material.wireframe = enabled;
+    });
+  }
+
+  // Casts a ray from normalized device coordinates (-1..1 on each axis)
+  // through the current object and returns the first hit point, or null.
+  pickPoint(ndcX, ndcY) {
+    if (!this.currentObject) return null;
+    this._raycaster.setFromCamera({ x: ndcX, y: ndcY }, this.camera);
+    const hits = this._raycaster.intersectObject(this.currentObject, true);
+    return hits.length ? hits[0].point.clone() : null;
+  }
+
+  // Adds one measurement point from a raycast pick. Returns:
+  //   { status: "miss" }                          — ray didn't hit the model
+  //   { status: "first" }                          — first point placed, waiting for a second
+  //   { status: "complete", distance, a, b }       — second point placed; distance is in the
+  //                                                   model's own units (unknown real-world scale)
+  addMeasurePoint(ndcX, ndcY) {
+    const point = this.pickPoint(ndcX, ndcY);
+    if (!point) return { status: "miss" };
+
+    const marker = new THREE.Mesh(
+      new THREE.SphereGeometry(0.015 * this.spherical.radius, 12, 12),
+      new THREE.MeshBasicMaterial({ color: 0xff8a3d })
+    );
+    marker.position.copy(point);
+    this._measureGroup.add(marker);
+    this._measurePoints.push(point);
+
+    if (this._measurePoints.length < 2) {
+      return { status: "first" };
+    }
+
+    const [a, b] = this._measurePoints;
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints([a, b]),
+      new THREE.LineBasicMaterial({ color: 0x33ff99 })
+    );
+    this._measureGroup.add(line);
+
+    const distance = a.distanceTo(b);
+    this._measurePoints = []; // ready for a fresh pair; markers stay visible until clearMeasurement()
+    return { status: "complete", distance, a, b };
+  }
+
+  clearMeasurement() {
+    for (const child of [...this._measureGroup.children]) {
+      this._measureGroup.remove(child);
+      child.geometry?.dispose();
+      child.material?.dispose();
+    }
+    this._measurePoints = [];
   }
 
   render() {

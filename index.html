@@ -40,7 +40,7 @@
       </div>
 
       <div class="canvas-frame">
-        <video id="webcam" autoplay playsinline muted hidden></video>
+        <video id="webcam" autoplay playsinline muted></video>
         <canvas id="captureCanvas"></canvas>
         <button class="start-overlay" id="startBtn">Start camera</button>
       </div>
@@ -62,12 +62,30 @@
             <input type="file" id="modelInput" accept=".stl,.obj,.ply" hidden />
           </label>
           <button id="resetViewBtn">Reset view</button>
+          <button id="wireframeBtn">Wireframe</button>
+          <button id="measureBtn">Measure</button>
           <button id="downloadLogBtn">Download log</button>
         </div>
       </div>
+
+      <div class="toolbar view-toolbar" aria-label="Snap to view">
+        <button class="view-btn" data-view="front" title="Key: 1 · Gesture: thumb only">Front</button>
+        <button class="view-btn" data-view="back" title="Key: 2 · Gesture: thumb + index">Back</button>
+        <button class="view-btn" data-view="left" title="Key: 3 · Gesture: thumb + index + middle">Left</button>
+        <button class="view-btn" data-view="right" title="Key: 4 · Gesture: thumb + index + middle + ring">Right</button>
+        <button class="view-btn" data-view="top" title="Key: 5 · Gesture: pinky only">Top</button>
+        <button class="view-btn" data-view="bottom" title="Key: 6 · Gesture: pinky + ring">Bottom</button>
+        <button class="view-btn" data-view="iso" title="Key: 7 · Gesture: pinky + ring + middle">Iso</button>
+      </div>
+
       <div class="canvas-frame">
         <canvas id="viewerCanvas"></canvas>
       </div>
+
+      <dl class="readout">
+        <div><dt>Wireframe</dt><dd id="wireframeState">off</dd></div>
+        <div><dt>Measured</dt><dd id="measureResult">– units</dd></div>
+      </dl>
     </section>
 
     <aside class="panel settings-panel">
@@ -77,6 +95,7 @@
         <span>Pinch threshold <output id="pinchValue"></output></span>
         <input type="range" id="pinchSlider" min="0.15" max="0.7" step="0.01" value="0.4" />
       </label>
+      <button id="calibrateBtn" class="calibrate-btn">Calibrate pinch (3s)</button>
 
       <label class="slider-row">
         <span>Pan speed <output id="panValue"></output></span>
@@ -98,7 +117,33 @@
         <li><span class="dot dot-pan"></span><strong>Pinch + drag</strong> — one hand — Pan</li>
         <li><span class="dot dot-rotate"></span><strong>Open palm, move</strong> — one hand — Rotate</li>
         <li><span class="dot dot-zoom"></span><strong>Two hands</strong>, apart/together — Zoom</li>
+        <li><span class="dot dot-action"></span><strong>Fist</strong> — one hand — Reset view</li>
+        <li><span class="dot dot-action"></span><strong>Thumbs up / down</strong> — Wireframe on/off</li>
       </ul>
+      <h2>Snap to view</h2>
+      <p class="hint">Count with one hand (thumb side first, then pinky side), press a number key, or click a button above.</p>
+      <ul class="gesture-legend">
+        <li><span class="dot dot-action"></span><strong>1 — Thumb only</strong> — Front <em>(same pose as thumbs up — that gesture wins; use the key/button for Front)</em></li>
+        <li><span class="dot dot-action"></span><strong>2 — Thumb + index</strong> — Back</li>
+        <li><span class="dot dot-action"></span><strong>3 — Thumb + index + middle</strong> — Left</li>
+        <li><span class="dot dot-action"></span><strong>4 — Thumb + index + middle + ring</strong> — Right</li>
+        <li><span class="dot dot-action"></span><strong>5 — Pinky only</strong> — Top</li>
+        <li><span class="dot dot-action"></span><strong>6 — Pinky + ring</strong> — Bottom</li>
+        <li><span class="dot dot-action"></span><strong>7 — Pinky + ring + middle</strong> — Iso</li>
+      </ul>
+      <p class="hint">Mouse also works any time: drag to rotate, right-drag to pan, scroll to zoom. Or click a button above.</p>
+
+      <h2>Benchmark</h2>
+        <p class="hint">
+           Measures the time required to align the 3D model with a randomly generated target view. 
+           Use these tests to compare the speed and accuracy of gesture control versus traditional mouse navigation.
+        </p>
+        <div class="benchmark-controls">
+          <button id="benchGestureBtn">Test Hand Speed</button>
+          <button id="benchMouseBtn">Test Mouse Speed</button>
+          <button id="benchDownloadBtn">Download Results</button>
+        </div>
+        <p class="benchmark-status" id="benchmarkStatus">Ready</p>
     </aside>
   </main>
 

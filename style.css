@@ -120,6 +120,23 @@ body {
   display: block;
 }
 
+/* The <video> element is only a decode source for captureCanvas — it's
+   never meant to be visible, since the canvas (drawn every frame in
+   drawCurrentFrame()) fully covers it. It used to have the `hidden`
+   attribute, which sets `display: none`; several browsers pause or
+   throttle frame decoding for display:none video elements after a few
+   seconds (since nothing is being composited), which caused the feed to
+   visibly freeze a few seconds after starting the camera. Keeping it
+   laid out but visually invisible (zero size, opacity 0) keeps decoding
+   active indefinitely while still never showing on screen. */
+.canvas-frame video {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .start-overlay {
   position: absolute;
   inset: 0;
@@ -277,6 +294,51 @@ input:focus-visible {
 
 .dot-zoom {
   background: var(--accent-green);
+}
+
+.dot-action {
+  background: var(--danger);
+}
+
+.view-toolbar {
+  margin-bottom: 0.75rem;
+}
+
+.view-toolbar .view-btn {
+  font-size: 0.75rem;
+  padding: 0.35rem 0.6rem;
+}
+
+button.active,
+.file-button.active {
+  border-color: var(--accent-green);
+  color: var(--accent-green);
+}
+
+.calibrate-btn {
+  width: 100%;
+  margin: -0.4rem 0 0.9rem;
+}
+
+.hint {
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  margin: 0.4rem 0 0;
+  line-height: 1.4;
+}
+
+.benchmark-controls {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.6rem;
+}
+
+.benchmark-status {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  color: var(--accent-blue);
+  margin: 0.6rem 0 0;
 }
 
 @media (max-width: 900px) {

@@ -15,8 +15,12 @@ import {
   fingersExtended,
   isOpenPalm,
   isPinch,
+  isFist,
+  isThumbPose,
+  viewPose,
   GestureController,
   GestureState,
+  GestureAction,
 } from "../js/gestureController.js";
 
 // --- Synthetic hand poses ---------------------------------------------------
@@ -62,11 +66,80 @@ function fistLandmarks() {
   return lm;
 }
 
+function thumbsUpLandmarks() {
+  const lm = fistLandmarks(); // 4 main fingers curled
+  lm[2] = { x: 0.62, y: 0.75, z: 0 }; // thumb MCP
+  lm[4] = { x: 0.55, y: 0.2, z: 0 }; // thumb TIP: x < mcp.x (extended), well above wrist
+  return lm;
+}
+
+function thumbsDownLandmarks() {
+  const lm = fistLandmarks();
+  lm[2] = { x: 0.62, y: 0.75, z: 0 };
+  lm[4] = { x: 0.55, y: 1.3, z: 0 }; // thumb TIP: extended, well below wrist
+  return lm;
+}
+
+// A relaxed, real-world fist: fingers curled the same as fistLandmarks(),
+// but the thumb rests up along the side of the curled fingers instead of
+// tucked flush against the palm — close to the wrist/palm center, not
+// clearly pulled away from it. This should still read as FIST, not
+// THUMBS_UP (see the isFist()/isThumbPose() comments in gestureController.js).
+function restingThumbFistLandmarks() {
+  const lm = fistLandmarks();
+  lm[2] = { x: 0.62, y: 0.75, z: 0 }; // thumb MCP
+  lm[4] = { x: 0.6, y: 0.62, z: 0 }; // thumb TIP: a little up, but close to palm center (0.5, 0.55)
+  return lm;
+}
+
+// A thumb pointing mostly sideways (left/right), only slightly higher than
+// its own knuckle. This should not register as THUMBS_UP just because it's
+// a bit above the wrist — it must be close to vertical to count.
+function thumbsSidewaysLandmarks() {
+  const lm = fistLandmarks();
+  lm[2] = { x: 0.62, y: 0.75, z: 0 }; // thumb MCP
+  lm[4] = { x: 0.95, y: 0.7, z: 0 }; // thumb TIP: far out sideways, barely higher than MCP
+  return lm;
+}
+
+// Landmarks for a "counting" view-snap pose: starts from a fist and
+// extends exactly the requested fingers. `pattern` is
+// { thumb, index, middle, ring, pinky } booleans. When the thumb is part
+// of the count it's extended straight up (same shape isThumbPose() would
+// also accept), and when it's not part of the count it stays tucked in,
+// same as fistLandmarks().
+function countPoseLandmarks({ thumb = false, index = false, middle = false, ring = false, pinky = false } = {}) {
+  const lm = fistLandmarks();
+  if (thumb) {
+    lm[2] = { x: 0.62, y: 0.75, z: 0 }; // thumb MCP
+    lm[4] = { x: 0.55, y: 0.2, z: 0 }; // thumb TIP: extended, straight up
+  }
+  if (index) lm[8] = { x: 0.45, y: 0.3, z: 0 };
+  if (middle) lm[12] = { x: 0.5, y: 0.25, z: 0 };
+  if (ring) lm[16] = { x: 0.55, y: 0.3, z: 0 };
+  if (pinky) lm[20] = { x: 0.6, y: 0.35, z: 0 };
+  return lm;
+}
+
 function pinchLandmarks() {
   const lm = openHandLandmarks();
   // Bring thumb and index tips together; everything else can stay put.
   lm[4] = { x: 0.44, y: 0.42, z: 0 };
   lm[8] = { x: 0.45, y: 0.4, z: 0 };
+  return lm;
+}
+
+// A more "real webcam" pinch attempt: starts from a curled hand (like a
+// fist) and brings the thumb and index TIPS close together, but the index
+// tip still ends up below its pip (reads as "curled" by the tip-vs-pip
+// test) and the thumb tip stays on the "not extended" side of the x-check.
+// All 4 main fingers therefore read as curled, same as a real fist — this
+// is exactly the case that used to satisfy isFist() before isPinch() ever
+// ran, so it misfired as FIST/reset-view instead of PAN.
+function realisticPinchLandmarks() {
+  const lm = fistLandmarks();
+  lm[4] = { x: 0.63, y: 0.56, z: 0 }; // thumb tip: still x > mcp.x (not "extended"), but near index tip
+  lm[8] = { x: 0.6, y: 0.58, z: 0 }; // index tip: still below its pip (curled), but near thumb tip
   return lm;
 }
 
@@ -132,6 +205,44 @@ test("isPinch() does not fire on an open, spread-out hand", () => {
   assert.equal(pinching, false);
 });
 
+// --- Fist / thumb-pose classification ---------------------------------------
+
+test("isFist() is true for a curled hand regardless of thumb", () => {
+  assert.equal(isFist(fistLandmarks(), "Right"), true);
+  assert.equal(isFist(openHandLandmarks(), "Right"), false);
+});
+
+test("isThumbPose() reads up/down only when the 4 main fingers are curled and thumb is clearly extended", () => {
+  assert.equal(isThumbPose(openHandLandmarks(), "Right"), null); // fingers not curled
+  assert.equal(isThumbPose(fistLandmarks(), "Right"), null); // thumb not extended either
+  assert.equal(isThumbPose(thumbsUpLandmarks(), "Right"), "up");
+  assert.equal(isThumbPose(thumbsDownLandmarks(), "Right"), "down");
+});
+
+test("isThumbPose() ignores hand label / mirroring — up/down comes from the thumb's own direction", () => {
+  // Same shapes as "Right", but labeled "Left". The old x-position-vs-label
+  // heuristic would have gotten this backwards; the distance/angle-based
+  // version doesn't care about the label at all.
+  assert.equal(isThumbPose(thumbsUpLandmarks(), "Left"), "up");
+  assert.equal(isThumbPose(thumbsDownLandmarks(), "Left"), "down");
+});
+
+test("isThumbPose() returns null for a relaxed fist whose thumb rests near the palm (not pulled away)", () => {
+  // Regression test: a normal, relaxed fist often has the thumb resting up
+  // alongside the curled fingers rather than tucked flush against the
+  // palm. That used to be close enough to satisfy the old "thumb above
+  // wrist" check and get misread as THUMBS_UP, which is exactly why a real
+  // fist reliably failed to register as FIST.
+  assert.equal(isThumbPose(restingThumbFistLandmarks(), "Right"), null);
+});
+
+test("isThumbPose() returns null for a thumb pointing mostly sideways, even if slightly higher than its knuckle", () => {
+  // Regression test: a thumb held out to the left/right used to be able to
+  // register as "up" just from being marginally above the wrist. It must
+  // now be close to vertical to count at all.
+  assert.equal(isThumbPose(thumbsSidewaysLandmarks(), "Right"), null);
+});
+
 // --- GestureController state machine ---------------------------------------
 
 test("no hands visible is IDLE", () => {
@@ -169,10 +280,34 @@ test("a pinch is PAN, not ROTATE", () => {
   assert.equal(result.state, GestureState.PAN);
 });
 
-test("a fist (neither pinch nor open palm) is IDLE", () => {
+test("a fist is its own state, not a generic IDLE (see the FIST tests below for the reset action)", () => {
   const controller = new GestureController();
   const result = controller.update([{ landmarks: fistLandmarks(), label: "Right" }]);
-  assert.equal(result.state, GestureState.IDLE);
+  assert.equal(result.state, GestureState.FIST);
+  assert.equal(result.pan, null);
+  assert.equal(result.rotate, null);
+  assert.equal(result.zoom, null);
+});
+
+test("a relaxed real-world fist (thumb resting near the palm, not tucked flush) still registers as FIST", () => {
+  // Regression test for the "fist is never recognized" bug: this is the
+  // pose a real hand naturally makes (see restingThumbFistLandmarks()),
+  // and it must resolve to FIST/RESET_VIEW rather than THUMBS_UP.
+  const controller = new GestureController();
+  const result = controller.update([{ landmarks: restingThumbFistLandmarks(), label: "Right" }]);
+  assert.equal(result.state, GestureState.FIST);
+  assert.equal(result.action, GestureAction.RESET_VIEW);
+});
+
+test("a realistic pinch (fingers curled like a fist, thumb+index tips close) is PAN, not FIST", () => {
+  // Regression test for the misclassification bug: even when all 4 main
+  // fingers read as curled (which is also true of a fist), a close
+  // thumb-to-index distance must win and register as PAN.
+  const controller = new GestureController();
+  const result = controller.update([{ landmarks: realisticPinchLandmarks(), label: "Right" }]);
+  assert.equal(result.state, GestureState.PAN);
+  assert.notEqual(result.state, GestureState.FIST);
+  assert.equal(result.action, null); // PAN is continuous, not a one-shot action like FIST
 });
 
 test("two hands is ZOOM, with no delta on the first frame", () => {
@@ -206,6 +341,122 @@ test("ZOOM is positive when hands move apart", () => {
 
   assert.equal(result.state, GestureState.ZOOM);
   assert.ok(result.zoom > 0);
+});
+
+test("a not-quite-closed pinch is IDLE, not misread as ROTATE", () => {
+  // Thumb has moved noticeably toward the index finger (this is what a
+  // real, slightly-imprecise pinch attempt looks like on a webcam) but
+  // doesn't cross the pinch threshold. The other 4 fingers still read as
+  // "extended," so without a buffer this used to fall through to
+  // isOpenPalm() and get classified as ROTATE.
+  const lm = openHandLandmarks();
+  lm[4] = { x: 0.5, y: 0.5, z: 0 }; // thumb tip moved toward index, not touching
+
+  const controller = new GestureController({ pinchThreshold: 0.4 });
+  const result = controller.update([{ landmarks: lm, label: "Right" }]);
+
+  assert.equal(result.state, GestureState.IDLE);
+  assert.equal(result.rotate, null);
+});
+
+test("a fist fires RESET_VIEW once, then latches until released", () => {
+  const controller = new GestureController();
+
+  const first = controller.update([{ landmarks: fistLandmarks(), label: "Right" }]);
+  assert.equal(first.state, GestureState.FIST);
+  assert.equal(first.action, GestureAction.RESET_VIEW);
+
+  // Holding the fist should not keep re-firing the action every frame.
+  const held = controller.update([{ landmarks: fistLandmarks(), label: "Right" }]);
+  assert.equal(held.state, GestureState.FIST);
+  assert.equal(held.action, null);
+
+  // Releasing and re-forming the fist should fire it again.
+  controller.update([]);
+  const again = controller.update([{ landmarks: fistLandmarks(), label: "Right" }]);
+  assert.equal(again.action, GestureAction.RESET_VIEW);
+});
+
+test("thumbs up fires WIREFRAME_ON once; thumbs down fires WIREFRAME_OFF once", () => {
+  const controller = new GestureController();
+
+  const up = controller.update([{ landmarks: thumbsUpLandmarks(), label: "Right" }]);
+  assert.equal(up.state, GestureState.THUMBS_UP);
+  assert.equal(up.action, GestureAction.WIREFRAME_ON);
+
+  const heldUp = controller.update([{ landmarks: thumbsUpLandmarks(), label: "Right" }]);
+  assert.equal(heldUp.action, null); // latched
+
+  const down = controller.update([{ landmarks: thumbsDownLandmarks(), label: "Right" }]);
+  assert.equal(down.state, GestureState.THUMBS_DOWN);
+  assert.equal(down.action, GestureAction.WIREFRAME_OFF); // switching pose re-fires
+});
+
+// --- View-snap counting gestures ---------------------------------------
+
+test("viewPose() recognizes counts 2-7 (thumb-side then pinky-side)", () => {
+  assert.equal(viewPose(countPoseLandmarks({ thumb: true, index: true }), "Right"), "back"); // 2
+  assert.equal(viewPose(countPoseLandmarks({ thumb: true, index: true, middle: true }), "Right"), "left"); // 3
+  assert.equal(
+    viewPose(countPoseLandmarks({ thumb: true, index: true, middle: true, ring: true }), "Right"),
+    "right" // 4
+  );
+  assert.equal(viewPose(countPoseLandmarks({ pinky: true }), "Right"), "top"); // 5
+  assert.equal(viewPose(countPoseLandmarks({ pinky: true, ring: true }), "Right"), "bottom"); // 6
+  assert.equal(viewPose(countPoseLandmarks({ pinky: true, ring: true, middle: true }), "Right"), "iso"); // 7
+});
+
+test("viewPose() reads count 1 (thumb only) as 'front' at the pure finger-pattern level", () => {
+  // viewPose() only looks at which fingers are up — it has no opinion about
+  // the thumb-pose collision. GestureController resolves that collision
+  // (see the next test); this just confirms the pattern match itself.
+  assert.equal(viewPose(countPoseLandmarks({ thumb: true }), "Right"), "front");
+});
+
+test("viewPose() returns null for a fist (0 fingers) and an open hand (5 fingers)", () => {
+  assert.equal(viewPose(fistLandmarks(), "Right"), null);
+  assert.equal(viewPose(openHandLandmarks(), "Right"), null);
+});
+
+test("GestureController: count 1 (thumb only) resolves to THUMBS_UP, not FRONT — same physical pose", () => {
+  // This is the documented collision: "thumb up, rest curled" is exactly
+  // the THUMBS_UP gesture, so that gesture wins and Front stays reachable
+  // only via the "1" key/button, not this exact hand shape.
+  const controller = new GestureController();
+  const result = controller.update([{ landmarks: countPoseLandmarks({ thumb: true }), label: "Right" }]);
+  assert.equal(result.state, GestureState.THUMBS_UP);
+  assert.equal(result.action, GestureAction.WIREFRAME_ON);
+});
+
+test("GestureController fires SNAP_VIEW once for an unambiguous count, then latches until released", () => {
+  const controller = new GestureController();
+  const lm = countPoseLandmarks({ thumb: true, index: true }); // "2" -> back
+
+  const first = controller.update([{ landmarks: lm, label: "Right" }]);
+  assert.equal(first.state, GestureState.BACK);
+  assert.equal(first.view, "back");
+  assert.equal(first.action, GestureAction.SNAP_VIEW);
+
+  const held = controller.update([{ landmarks: lm, label: "Right" }]);
+  assert.equal(held.action, null); // latched, doesn't re-fire every frame
+
+  const iso = controller.update([
+    { landmarks: countPoseLandmarks({ pinky: true, ring: true, middle: true }), label: "Right" }, // "7"
+  ]);
+  assert.equal(iso.state, GestureState.ISO);
+  assert.equal(iso.view, "iso");
+  assert.equal(iso.action, GestureAction.SNAP_VIEW); // switching poses re-fires
+});
+
+test("GestureController: count 4 (4 of 5 fingers up) is SNAP_VIEW, not misread as ROTATE", () => {
+  // Regression guard: "4" (thumb+index+middle+ring) satisfies isOpenPalm()'s
+  // ">= 4 extended" threshold too, so counting-view must win before the
+  // open-palm fallback ever runs.
+  const controller = new GestureController();
+  const lm = countPoseLandmarks({ thumb: true, index: true, middle: true, ring: true });
+  const result = controller.update([{ landmarks: lm, label: "Right" }]);
+  assert.equal(result.state, GestureState.RIGHT);
+  assert.equal(result.rotate, null);
 });
 
 test("switching gestures resets the previous gesture's memory", () => {
