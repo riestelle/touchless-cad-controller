@@ -143,6 +143,61 @@ function realisticPinchLandmarks() {
   return lm;
 }
 
+// An "OK sign" pinch: thumb and index tips brought together to touch (like
+// pinchLandmarks()), but built on top of countPoseLandmarks({pinky, ring,
+// middle}) so the other 3 fingers are raised too — i.e. the real-world
+// shape in the "make an OK sign" screenshot. At the pure "which fingers are
+// up" level this is indistinguishable from the "7"/ISO counting pose (see
+// VIEW_COUNTS.iso): index down, middle/ring/pinky up, thumb tucked. Only
+// the thumb-index touching/reaching distinguishes it as a pinch.
+function okSignPinchLandmarks() {
+  const lm = countPoseLandmarks({ pinky: true, ring: true, middle: true }); // "7" finger pattern
+  lm[4] = { x: 0.44, y: 0.42, z: 0 }; // thumb tip reaches in to meet the index tip
+  lm[8] = { x: 0.45, y: 0.4, z: 0 }; // index tip reaches toward the thumb, not left resting curled
+  return lm;
+}
+
+// A hand rotated so the fingers point down and toward the camera (fingers
+// folded, back of the folded fingers facing the lens) rather than the
+// usual "fingers point up" framing every other fixture uses. Physically
+// this is still a curled fist with the thumb pointing down (THUMBS_DOWN),
+// but a raw tip.y < pip.y screen-space check gets confused by the
+// rotation: folding a finger toward a wrist that is now ABOVE it (instead
+// of below, as in fistLandmarks()) can leave the folded tip with a
+// SMALLER y (higher up on screen) than its own pip, which used to misread
+// as "extended". Distance-from-wrist does not have this problem.
+function rotatedThumbsDownLandmarks() {
+  const lm = new Array(21);
+  lm[0] = { x: 0.5, y: 0.15, z: 0 }; // wrist near the TOP of frame (hand flipped)
+  // Index: mcp/pip extend downward from the wrist, tip curls back up
+  // toward the wrist (smaller y than the pip), but stays closer to the
+  // wrist than the pip does, i.e. genuinely curled.
+  lm[5] = { x: 0.4, y: 0.35, z: 0 };
+  lm[6] = { x: 0.4, y: 0.55, z: 0 };
+  lm[7] = { x: 0.4, y: 0.45, z: 0 };
+  lm[8] = { x: 0.4, y: 0.4, z: 0 }; // folded tip: y < pip.y, but closer to wrist than pip
+  lm[9] = { x: 0.45, y: 0.35, z: 0 };
+  lm[10] = { x: 0.45, y: 0.58, z: 0 };
+  lm[11] = { x: 0.45, y: 0.48, z: 0 };
+  lm[12] = { x: 0.45, y: 0.42, z: 0 };
+  lm[13] = { x: 0.5, y: 0.35, z: 0 };
+  lm[14] = { x: 0.5, y: 0.56, z: 0 };
+  lm[15] = { x: 0.5, y: 0.46, z: 0 };
+  lm[16] = { x: 0.5, y: 0.4, z: 0 };
+  lm[17] = { x: 0.55, y: 0.35, z: 0 };
+  lm[18] = { x: 0.55, y: 0.53, z: 0 };
+  lm[19] = { x: 0.55, y: 0.44, z: 0 };
+  lm[20] = { x: 0.55, y: 0.38, z: 0 };
+  // Thumb: pulled clearly away from the palm and pointing further down
+  // (larger y) than the frame's wrist-below-fingers norm — same "down"
+  // direction rule isThumbPose() already uses (dy > 0 => down).
+  lm[1] = { x: 0.35, y: 0.25, z: 0 };
+  lm[2] = { x: 0.32, y: 0.3, z: 0 }; // thumb MCP
+  lm[3] = { x: 0.35, y: 0.55, z: 0 };
+  lm[4] = { x: 0.4, y: 0.85, z: 0 }; // thumb TIP: far below its MCP => "down"
+  return lm;
+}
+
 // --- EMA ---------------------------------------------------------------
 
 test("EMA returns the first value unchanged", () => {
@@ -188,6 +243,26 @@ test("fingersExtended() reads an open hand as extended", () => {
 test("fingersExtended() reads a fist as curled", () => {
   const extended = fingersExtended(fistLandmarks(), "Right");
   assert.deepEqual(extended, [false, false, false, false, false]);
+});
+
+test("fingersExtended() reads curled fingers as curled even when the hand is rotated so folded tips land above their pips on screen", () => {
+  // Regression test: a raw tip.y < pip.y screen-space check flips when the
+  // hand is rotated (e.g. wrist above the fingers instead of below), so a
+  // genuinely folded finger can misread as "extended" purely from camera
+  // framing. Distance-from-wrist must not have this problem.
+  const extended = fingersExtended(rotatedThumbsDownLandmarks(), "Right");
+  assert.deepEqual(extended.slice(0, 4), [false, false, false, false]);
+});
+
+test("isThumbPose() recognizes THUMBS_DOWN even when the folded fingers face the camera at an angle that would fool a y-only curl check", () => {
+  assert.equal(isThumbPose(rotatedThumbsDownLandmarks(), "Right"), "down");
+});
+
+test("GestureController recognizes THUMBS_DOWN for the rotated/folded-fingers-toward-camera hand shape", () => {
+  const controller = new GestureController();
+  const result = controller.update([{ landmarks: rotatedThumbsDownLandmarks(), label: "Right" }]);
+  assert.equal(result.state, GestureState.THUMBS_DOWN);
+  assert.equal(result.action, GestureAction.WIREFRAME_OFF);
 });
 
 test("isOpenPalm() is true for an open hand, false for a fist", () => {
@@ -457,6 +532,62 @@ test("GestureController: count 4 (4 of 5 fingers up) is SNAP_VIEW, not misread a
   const result = controller.update([{ landmarks: lm, label: "Right" }]);
   assert.equal(result.state, GestureState.RIGHT);
   assert.equal(result.rotate, null);
+});
+
+test("GestureController: pinky-side counts (5-7) are not swallowed by a coincidental pinch reading", () => {
+  // Regression test: with the thumb tucked in (not part of the 5-7 counts)
+  // and the index also curled (not one of the extended fingers), the raw
+  // thumb-to-index distance can coincidentally land under the pinch
+  // threshold purely from hand shape — but the exact view-pose pattern
+  // match must win before pinch ever gets a chance to misclassify it.
+  const controller = new GestureController();
+  const top = controller.update([{ landmarks: countPoseLandmarks({ pinky: true }), label: "Right" }]); // "5"
+  assert.equal(top.state, GestureState.TOP);
+  assert.notEqual(top.state, GestureState.PAN);
+
+  const iso = controller.update([
+    { landmarks: countPoseLandmarks({ pinky: true, ring: true, middle: true }), label: "Right" }, // "7"
+  ]);
+  assert.equal(iso.state, GestureState.ISO);
+  assert.notEqual(iso.state, GestureState.PAN);
+});
+
+test("isPinch() fires for an OK-sign pinch even though its finger pattern matches the ISO (7) counting pose", () => {
+  // The OK sign (thumb+index touching, middle/ring/pinky raised) has the
+  // exact same "which fingers are up" pattern as VIEW_COUNTS.iso. isPinch()
+  // must still say yes here, because the index is genuinely reaching for
+  // the thumb (see MIN_INDEX_REACH_FOR_PINCH) rather than resting curled.
+  const { pinching } = isPinch(okSignPinchLandmarks(), 0.4);
+  assert.equal(pinching, true);
+});
+
+test("GestureController: an OK sign resolves to PAN (pinch), not ISO, despite the identical finger pattern", () => {
+  const controller = new GestureController();
+  const result = controller.update([{ landmarks: okSignPinchLandmarks(), label: "Right" }]);
+  assert.equal(result.state, GestureState.PAN);
+  assert.notEqual(result.state, GestureState.ISO);
+  assert.equal(result.action, null); // PAN isn't a one-shot action gesture
+});
+
+test("isPinch() does not fire when the thumb happens to be close to a curled, resting index tip", () => {
+  // Regression test: a real fist (knuckles toward the camera) can put the
+  // thumb tip and the folded index tip close together in the 2D image by
+  // coincidence, even though the index finger never reached for anything.
+  // isPinch() must require the index to actually be reaching away from its
+  // own knuckle, not just happen to be near the thumb.
+  const lm = fistLandmarks();
+  lm[4] = { x: 0.46, y: 0.57, z: 0 }; // thumb tip moved right next to the curled index tip
+  const { pinching } = isPinch(lm, 0.4);
+  assert.equal(pinching, false);
+});
+
+test("GestureController: a fist with the thumb coincidentally near the curled index still resolves to FIST", () => {
+  const lm = fistLandmarks();
+  lm[4] = { x: 0.46, y: 0.57, z: 0 }; // thumb tip moved right next to the curled index tip
+  const controller = new GestureController();
+  const result = controller.update([{ landmarks: lm, label: "Right" }]);
+  assert.equal(result.state, GestureState.FIST);
+  assert.equal(result.action, GestureAction.RESET_VIEW);
 });
 
 test("switching gestures resets the previous gesture's memory", () => {
