@@ -17,6 +17,7 @@ import {
   isPinch,
   isFist,
   isThumbPose,
+  isThumbExtended,
   viewPose,
   GestureController,
   GestureState,
@@ -547,6 +548,74 @@ test("GestureController: count 4 (4 of 5 fingers up) is SNAP_VIEW, not misread a
   assert.equal(result.rotate, null);
 });
 
+// --- ROTATE vs. RIGHT (4) regression -------------------------------------
+//
+// Bug: an ordinary, relaxed open-palm hand — thumb unfolded and resting out
+// to the side, but not flung dramatically far from the palm — used to get
+// misread as the "4"/RIGHT counting pose instead of ROTATE. isOpenPalm()
+// and viewPose() used to classify "is the thumb extended" two different
+// ways: isOpenPalm() (via fingersExtended()'s old left/right x-check) called
+// it extended fairly easily, while viewPose() required the thumb to sit at
+// least 0.75x hand-scale from the palm center — a bar a normal, unexaggerated
+// open hand often doesn't clear. Since view-snap poses are checked before
+// the open-palm fallback, RIGHT won almost every time. See
+// isThumbExtended()'s comment in gestureController.js for the full story.
+function naturalOpenHandLandmarks() {
+  const lm = new Array(21);
+  lm[0] = { x: 0.5, y: 0.9, z: 0 }; // wrist
+  lm[1] = { x: 0.6, y: 0.8, z: 0 };
+  lm[2] = { x: 0.58, y: 0.72, z: 0 }; // thumb MCP
+  lm[3] = { x: 0.48, y: 0.62, z: 0 }; // thumb IP
+  // Thumb TIP: straight and unfolded, resting moderately out to the side —
+  // NOT flung out dramatically like openHandLandmarks()'s thumb. This is
+  // what a typical relaxed open-palm hand actually looks like.
+  lm[4] = { x: 0.35, y: 0.55, z: 0 };
+  lm[5] = { x: 0.45, y: 0.6, z: 0 };
+  lm[6] = { x: 0.45, y: 0.5, z: 0 };
+  lm[7] = { x: 0.45, y: 0.4, z: 0 };
+  lm[8] = { x: 0.45, y: 0.3, z: 0 };
+  lm[9] = { x: 0.5, y: 0.55, z: 0 };
+  lm[10] = { x: 0.5, y: 0.45, z: 0 };
+  lm[11] = { x: 0.5, y: 0.35, z: 0 };
+  lm[12] = { x: 0.5, y: 0.25, z: 0 };
+  lm[13] = { x: 0.55, y: 0.6, z: 0 };
+  lm[14] = { x: 0.55, y: 0.5, z: 0 };
+  lm[15] = { x: 0.55, y: 0.4, z: 0 };
+  lm[16] = { x: 0.55, y: 0.3, z: 0 };
+  lm[17] = { x: 0.6, y: 0.65, z: 0 };
+  lm[18] = { x: 0.6, y: 0.55, z: 0 };
+  lm[19] = { x: 0.6, y: 0.45, z: 0 };
+  lm[20] = { x: 0.6, y: 0.35, z: 0 };
+  return lm;
+}
+
+test("isThumbExtended() reads a moderately-out, unfolded thumb as extended, not just a dramatically splayed one", () => {
+  assert.equal(isThumbExtended(naturalOpenHandLandmarks()), true);
+});
+
+test("REGRESSION: a natural, unexaggerated open palm is ROTATE, not misread as RIGHT (4)", () => {
+  const controller = new GestureController();
+  const result = controller.update([{ landmarks: naturalOpenHandLandmarks(), label: "Right" }]);
+  assert.equal(result.state, GestureState.ROTATE);
+  assert.notEqual(result.state, GestureState.RIGHT);
+  assert.equal(result.view, null);
+});
+
+test("REGRESSION: viewPose() returns null (not 'right') for the natural open-palm hand shape", () => {
+  assert.equal(viewPose(naturalOpenHandLandmarks(), "Right"), null);
+});
+
+test("a genuinely tucked thumb still resolves to RIGHT (4), not ROTATE", () => {
+  // The flip side of the regression above: RIGHT must still fire when the
+  // thumb is actually folded back toward its own base, not just resting
+  // somewhere short of a dramatic sideways fling.
+  const controller = new GestureController();
+  const lm = countPoseLandmarks({ index: true, middle: true, ring: true, pinky: true }); // thumb stays tucked
+  const result = controller.update([{ landmarks: lm, label: "Right" }]);
+  assert.equal(result.state, GestureState.RIGHT);
+  assert.equal(result.rotate, null);
+});
+
 test("GestureController: pinky-side counts (5-7) are not swallowed by a coincidental pinch reading", () => {
   // Regression test: with the thumb tucked in (not part of the 5-7 counts)
   // and the index also curled (not one of the extended fingers), the raw
@@ -601,6 +670,63 @@ test("GestureController: a fist with the thumb coincidentally near the curled in
   const result = controller.update([{ landmarks: lm, label: "Right" }]);
   assert.equal(result.state, GestureState.FIST);
   assert.equal(result.action, GestureAction.RESET_VIEW);
+});
+
+// --- panGain scale regression ---------------------------------------------
+//
+// Bug: the default panGain (2.5) was ~100x smaller than the default
+// rotateGain (250), even though cadViewer.js's PAN_UNIT/ROTATE_UNIT are
+// only 2x apart - so a pinch-drag moved the model roughly 50x less than an
+// open-palm rotate for the same hand movement, and the "Pan speed" slider's
+// range (0.5-6) couldn't make up the difference even maxed out.
+
+test("REGRESSION: default panGain is on the same order of magnitude as rotateGain, not ~100x smaller", () => {
+  const controller = new GestureController();
+  // cadViewer.js applies PAN_UNIT=0.01 vs ROTATE_UNIT=0.005 (2x apart), so
+  // panGain should be roughly half of rotateGain, not orders of magnitude
+  // below it.
+  assert.ok(
+    controller.panGain >= controller.rotateGain / 4,
+    `panGain (${controller.panGain}) is far too small relative to rotateGain (${controller.rotateGain}) - PAN will feel dead compared to ROTATE for the same hand movement`
+  );
+});
+
+// --- Pinch hysteresis regression -------------------------------------------
+//
+// Bug: a single frame where tracking noise pushed the pinch distance or
+// index-reach a hair past isPinch()'s entry bar (very easy right at a
+// "fully closed" pinch, where the tracker's estimate of the touching tips
+// is noisiest) made GestureController treat the pinch as released, wiping
+// _prevPinchPos and losing the drag's continuity for a frame - which felt
+// like the gesture "getting mixed up" mid-drag and not moving much overall.
+
+test("REGRESSION: a single noisy frame just over the pinch threshold, in the middle of an active drag, does not drop the drag", () => {
+  const controller = new GestureController({ pinchThreshold: 0.4 });
+
+  const a = pinchLandmarks();
+  controller.update([{ landmarks: a, label: "Right" }]); // enter PAN
+
+  const b = pinchLandmarks();
+  b[4] = { x: b[4].x + 0.05, y: b[4].y, z: 0 }; // move while pinching
+  const dragged = controller.update([{ landmarks: b, label: "Right" }]);
+  assert.equal(dragged.state, GestureState.PAN);
+  assert.ok(dragged.pan);
+
+  // One noisy frame: thumb/index drift slightly apart, just past the
+  // strict entry threshold, but nowhere near fully open.
+  const noisy = pinchLandmarks();
+  noisy[4] = { x: 0.5, y: 0.42, z: 0 };
+  noisy[8] = { x: 0.45, y: 0.4, z: 0 }; // raw distance ~0.05/handScale, still small
+  const noisyResult = controller.update([{ landmarks: noisy, label: "Right" }]);
+  assert.equal(noisyResult.state, GestureState.PAN); // hysteresis keeps this as PAN
+
+  // Continuing to drag afterward should still produce a delta, not a
+  // phantom-jump reset.
+  const c = pinchLandmarks();
+  c[4] = { x: c[4].x + 0.1, y: c[4].y, z: 0 };
+  const resumed = controller.update([{ landmarks: c, label: "Right" }]);
+  assert.equal(resumed.state, GestureState.PAN);
+  assert.ok(resumed.pan);
 });
 
 test("switching gestures resets the previous gesture's memory", () => {
