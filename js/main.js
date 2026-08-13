@@ -57,6 +57,56 @@ let lastFrameTime = performance.now();
 let fps = 0;
 const sessionLog = [];
 
+// --- Mode-display smoothing ------------------------------------------------
+// gesture.state is recomputed fresh every single frame straight from the
+// current landmarks, with no memory of previous frames. That's correct for
+// driving actions (the controller already latches those so they don't
+// re-fire), but showing it directly in the "Mode" pill means any one noisy
+// frame — a hand mid-transition between poses, a momentary tracking glitch —
+// flashes across the screen just like a real, held pose would. In practice
+// that showed up as things like a held THUMBS DOWN being immediately
+// followed by a flicker through IDLE/PAN/LEFT/etc. that the person was never
+// actually doing, making it hard to tell whether a gesture had really
+// registered.
+//
+// This buffers the last MODE_SMOOTHING_WINDOW raw states and displays
+// whichever one is most common across that window, so a single stray frame
+// can't flip the display on its own — it takes a run of consecutive frames
+// agreeing before the shown mode actually changes. At ~30fps this costs
+// roughly 150-200ms of extra display latency, which is unnoticeable for a
+// status readout but enough to smooth out frame-to-frame jitter. This only
+// affects what's displayed — pan/rotate/zoom and one-shot actions
+// (fist/thumbs/snap-view) still come straight from the controller every
+// frame, so movement stays responsive and actions still fire on their real
+// rising edge.
+const MODE_SMOOTHING_WINDOW = 6;
+let modeHistory = [];
+
+function smoothedMode(rawState, handsVisible) {
+  if (!handsVisible) {
+    // No hands means IDLE should show up immediately, not lag behind
+    // whatever pose was held right before the hand left frame.
+    modeHistory = [];
+    return rawState;
+  }
+
+  modeHistory.push(rawState);
+  if (modeHistory.length > MODE_SMOOTHING_WINDOW) modeHistory.shift();
+
+  const counts = new Map();
+  for (const s of modeHistory) counts.set(s, (counts.get(s) ?? 0) + 1);
+
+  let best = rawState;
+  let bestCount = 0;
+  for (const [s, c] of counts) {
+    if (c > bestCount) {
+      best = s;
+      bestCount = c;
+    }
+  }
+  return best;
+}
+
 let wireframeOn = false;
 let measureMode = false;
 let calibrationCollector = null; // { samples: [] } while a calibration phase is collecting
@@ -516,7 +566,7 @@ function loop() {
   fps = 0.9 * fps + 0.1 * (1000 / Math.max(now - lastFrameTime, 1));
   lastFrameTime = now;
 
-  modeEl.textContent = gesture.state;
+  modeEl.textContent = smoothedMode(gesture.state, handsData.length > 0);
   fpsEl.textContent = fps.toFixed(1);
   handsEl.textContent = String(handsData.length);
   pinchDistEl.textContent =
